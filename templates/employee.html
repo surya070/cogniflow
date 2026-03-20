@@ -1,0 +1,376 @@
+{% extends "base.html" %}
+{% from 'base.html' import timedelta %}
+{% block title %}{{ employee_id }} — Cogniflow{% endblock %}
+
+{% set timedelta = namespace(value=None) %}
+
+{% block head %}
+<style>
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+  }
+
+  @media (max-width: 768px) {
+    .detail-grid { grid-template-columns: 1fr; }
+  }
+
+  .full-width { grid-column: 1 / -1; }
+
+  .readiness-hero {
+    text-align: center;
+    padding: 2rem;
+  }
+
+  .readiness-circle {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1rem;
+    font-family: var(--mono);
+    border: 3px solid;
+    position: relative;
+  }
+
+  .circle-high     { border-color: var(--green);  box-shadow: 0 0 30px rgba(0,255,163,.3); }
+  .circle-moderate { border-color: var(--yellow); box-shadow: 0 0 30px rgba(255,214,10,.3); }
+  .circle-low      { border-color: var(--red);    box-shadow: 0 0 30px rgba(255,71,87,.3); }
+
+  .circle-score {
+    font-size: 1.8rem;
+    font-weight: 700;
+  }
+
+  .circle-high .circle-score     { color: var(--green); }
+  .circle-moderate .circle-score { color: var(--yellow); }
+  .circle-low .circle-score      { color: var(--red); }
+
+  .circle-label { font-size: .65rem; color: var(--muted); letter-spacing: .1em; }
+
+  .insight-list { list-style: none; }
+
+  .insight-list li {
+    padding: .6rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: .875rem;
+    line-height: 1.5;
+    display: flex;
+    gap: .5rem;
+  }
+
+  .insight-list li:last-child { border-bottom: none; }
+
+  .warning-box {
+    background: rgba(255,71,87,.08);
+    border: 1px solid rgba(255,71,87,.3);
+    border-radius: 8px;
+    padding: 1rem;
+    font-size: .875rem;
+    color: #ff9999;
+    display: flex;
+    gap: .6rem;
+    align-items: flex-start;
+    margin-bottom: .75rem;
+  }
+
+  .task-section { margin-bottom: 1rem; }
+  .task-section h4 {
+    font-family: var(--mono);
+    font-size: .7rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    margin-bottom: .5rem;
+  }
+
+  .task-pill {
+    display: inline-block;
+    padding: .3rem .75rem;
+    border-radius: 6px;
+    font-size: .8rem;
+    margin: .2rem;
+  }
+
+  .task-do   { background: rgba(0,255,163,.1); color: var(--green);  border: 1px solid rgba(0,255,163,.25); }
+  .task-avoid{ background: rgba(255,71,87,.1);  color: var(--red);   border: 1px solid rgba(255,71,87,.25); }
+
+  .history-row {
+    display: grid;
+    grid-template-columns: 90px 100px 100px 1fr 60px 60px 60px 60px;
+    gap: .5rem;
+    padding: .65rem .5rem;
+    border-bottom: 1px solid var(--border);
+    font-size: .75rem;
+    align-items: center;
+    font-family: var(--mono);
+  }
+
+  .history-row:last-child { border-bottom: none; }
+
+  .history-header {
+    color: var(--muted);
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+
+  .sleep-bar-bg {
+    background: rgba(0,0,0,.4);
+    border-radius: 99px;
+    height: 4px;
+    overflow: hidden;
+  }
+
+  .sleep-bar-fill {
+    height: 100%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+  }
+
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: .85rem;
+    margin-bottom: 1.5rem;
+    transition: color .2s;
+  }
+
+  .back-link:hover { color: var(--accent); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+  <a href="/" class="back-link">← Back to Dashboard</a>
+  {% if latest %}
+  <a href="/employee/{{ employee_id }}/heart-rate" style="color: var(--accent); text-decoration: none; font-size: 0.9rem; border: 1px solid var(--border); padding: 0.5rem 1rem; border-radius: 4px; transition: all 0.2s; display: inline-block;">❤️ Heart Rate Analysis</a>
+  {% endif %}
+</div>
+
+<div class="page-header">
+  <h1>{{ employee_id }}</h1>
+  {% if latest %}
+    <span class="tag tag-neutral">{{ latest.sleep_date }}</span>
+  {% endif %}
+</div>
+
+{% if not latest %}
+  <div class="card" style="text-align:center; padding:3rem; color:var(--muted); font-family:var(--mono);">
+    No data found for {{ employee_id }}
+  </div>
+{% else %}
+
+<div class="detail-grid">
+
+  <!-- Readiness hero -->
+  <div class="card readiness-hero">
+    {% set score = latest.cognitive_score or 'moderate' %}
+    <h3 style="margin-bottom:1.5rem;">Today's Readiness</h3>
+    <div class="readiness-circle circle-{{ score }}">
+      <span class="circle-score">{{ score[0] | upper }}</span>
+      <span class="circle-label">{{ score | upper }}</span>
+    </div>
+    <div style="font-size:1.1rem; font-weight:600; margin-bottom:.5rem;">{{ readiness_label }}</div>
+    <div style="font-size:.85rem; color:var(--muted);">
+      Fatigue: <span style="color:var(--text)">{{ latest.fatigue_level | upper }}</span> &nbsp;·&nbsp;
+      Recovery: <span style="color:var(--text)">{{ latest.recovery_state | upper }}</span>
+    </div>
+  </div>
+
+  <!-- Sleep breakdown -->
+  <div class="card">
+    <h3 style="margin-bottom:1rem;">Sleep Breakdown</h3>
+    {% set total_sleep = latest.total_sleep_minutes or 0 %}
+    {% set awake_time = latest.awake_minutes or 0 %}
+    {% set total_all = total_sleep + awake_time %}
+    
+    <div style="font-family:var(--mono); font-size:2rem; color:var(--accent); font-weight:700;">
+      {{ total_all | format_duration }}
+    </div>
+    <div style="font-size:.8rem; color:var(--muted); margin-bottom:1rem;">Time in bed</div>
+    <div style="font-size:.75rem; color:var(--muted); margin-bottom:1rem;">
+      Actual sleep: <span style="color:var(--text);">{{ total_sleep | format_duration }}</span>
+      {% if awake_time %} ({{ (awake_time|int) }}m awake){% endif %}
+    </div>
+
+    {% macro sleep_bar(label, minutes, color) %}
+      {% if minutes and total_all %}
+        {% set pct = ((minutes / total_all) * 100) | round(0) %}
+        <div style="margin-bottom:.65rem;">
+          <div style="display:flex; justify-content:space-between; font-size:.75rem; margin-bottom:.25rem;">
+            <span style="color:var(--muted);">{{ label }}</span>
+            <span style="font-family:var(--mono); color:{{ color }}">{{ minutes | format_duration }} ({{ pct }}%)</span>
+          </div>
+          <div class="sleep-bar-bg">
+            <div class="sleep-bar-fill" style="width:{{ pct }}%; background:{{ color }};"></div>
+          </div>
+        </div>
+      {% endif %}
+    {% endmacro %}
+
+    {{ sleep_bar("Deep", latest.deep_sleep_minutes, "#7c3aed") }}
+    {{ sleep_bar("REM",  latest.rem_sleep_minutes,  "#00e5ff") }}
+    {{ sleep_bar("Light",latest.light_sleep_minutes,"#4a90d9") }}
+    {{ sleep_bar("Awake",latest.awake_minutes,       "#ff4757") }}
+  </div>
+
+  <!-- Vitals -->
+  <div class="card">
+    <h3 style="margin-bottom:1rem;">Vitals</h3>
+    <div class="metric-row" style="flex-direction:column; gap:.75rem;">
+      {% if latest.resting_heart_rate %}
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:.875rem;">❤️ Resting Heart Rate</span>
+        <span style="font-family:var(--mono); color:var(--accent)">{{ latest.resting_heart_rate | int }} bpm</span>
+      </div>
+      {% endif %}
+      {% if latest.hrv %}
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:.875rem;">📶 Heart Rate Variability</span>
+        <span style="font-family:var(--mono); color:var(--accent)">{{ latest.hrv | int }} ms</span>
+      </div>
+      {% endif %}
+      {% if latest.spo2 %}
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:.875rem;">🫁 Blood Oxygen (SpO2)</span>
+        <span style="font-family:var(--mono); color:var(--accent)">{{ latest.spo2 | int }}%</span>
+      </div>
+      {% endif %}
+      {% if latest.stress_score %}
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:.875rem;">🧠 Stress Score</span>
+        <span style="font-family:var(--mono); color:{% if latest.stress_score < 40 %}var(--green){% elif latest.stress_score < 65 %}var(--yellow){% else %}var(--red){% endif %}">
+          {{ latest.stress_score | int }} / 100
+        </span>
+      </div>
+      {% endif %}
+      {% if latest.steps %}
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:.875rem;">👟 Steps</span>
+        <span style="font-family:var(--mono); color:var(--accent)">{{ "{:,}".format(latest.steps) }}</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- LLM Summary -->
+  {% if analysis %}
+  <div class="card">
+    <h3 style="margin-bottom:1rem;">AI Analysis</h3>
+    <p style="font-size:.875rem; line-height:1.7; color:var(--text);">{{ analysis.summary }}</p>
+  </div>
+
+  <!-- Warnings -->
+  {% if warnings %}
+  <div class="card full-width">
+    <h3 style="margin-bottom:1rem; color:var(--red);">⚠ Alerts</h3>
+    {% for w in warnings %}
+      <div class="warning-box">⚠ {{ w }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Insights -->
+  <div class="card">
+    <h3 style="margin-bottom:1rem;">Key Insights</h3>
+    <ul class="insight-list">
+      {% for insight in insights %}
+        <li><span style="color:var(--accent);">›</span> {{ insight }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <!-- Task Allocation -->
+  <div class="card">
+    <h3 style="margin-bottom:1rem;">Task Allocation</h3>
+    {% if task_alloc.recommended %}
+    <div class="task-section">
+      <h4>✅ Do Today</h4>
+      {% for t in task_alloc.recommended %}
+        <span class="task-pill task-do">{{ t }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if task_alloc.avoid %}
+    <div class="task-section">
+      <h4>⛔ Avoid Today</h4>
+      {% for t in task_alloc.avoid %}
+        <span class="task-pill task-avoid">{{ t }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if task_alloc.reasoning %}
+    <div style="margin-top:1rem; font-size:.8rem; color:var(--muted); line-height:1.6; border-top:1px solid var(--border); padding-top:1rem;">
+      {{ task_alloc.reasoning }}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- History -->
+  {% if readings | length > 1 %}
+  <div class="card full-width">
+    <h3 style="margin-bottom:1rem;">14-Day History</h3>
+    <div class="history-row history-header">
+      <span>Date</span>
+      <span>Start (IST)</span>
+      <span>End (IST)</span>
+      <span>Sleep</span>
+      <span>HR</span>
+      <span>HRV</span>
+      <span>SpO2</span>
+      <span>Score</span>
+    </div>
+    {% for r in readings %}
+    {% set rhr_color = 'var(--green)' if r.resting_heart_rate and r.resting_heart_rate <= 70 else ('var(--yellow)' if r.resting_heart_rate and r.resting_heart_rate <= 80 else 'var(--red)') %}
+    <div class="history-row">
+      <span style="color:var(--muted)">{{ r.sleep_date }}</span>
+      <span style="color:var(--muted); font-size:.7rem;">{{ r.sleep_start | ist_time }}</span>
+      <span style="color:var(--muted); font-size:.7rem;">{{ r.sleep_end | ist_time }}</span>
+      <div>
+        <div style="margin-bottom:.2rem; color:var(--accent); font-size:.8rem;">
+          {% set total_in_bed = ((r.sleep_end - r.sleep_start).total_seconds() / 60) if r.sleep_end and r.sleep_start else 0 %}
+          {{ total_in_bed | format_duration }}
+          <span style="color:var(--muted); font-size:.7rem;">({{ (r.total_sleep_minutes or 0) | format_duration }})</span>
+        </div>
+        <div class="sleep-bar-bg" style="height:12px; display:flex; overflow:hidden;">
+          {% set total_stages = (r.deep_sleep_minutes or 0) + (r.rem_sleep_minutes or 0) + (r.light_sleep_minutes or 0) + (r.awake_minutes or 0) %}
+          {% if total_stages > 0 %}
+            {% set deep_pct = ((r.deep_sleep_minutes or 0) / total_stages * 100) | round(1) %}
+            {% set rem_pct = ((r.rem_sleep_minutes or 0) / total_stages * 100) | round(1) %}
+            {% set light_pct = ((r.light_sleep_minutes or 0) / total_stages * 100) | round(1) %}
+            {% set awake_pct = ((r.awake_minutes or 0) / total_stages * 100) | round(1) %}
+            
+            {% if deep_pct > 0 %}<div style="width:{{ deep_pct }}%; background:#7c3aed; height:100%;"></div>{% endif %}
+            {% if rem_pct > 0 %}<div style="width:{{ rem_pct }}%; background:#00e5ff; height:100%;"></div>{% endif %}
+            {% if light_pct > 0 %}<div style="width:{{ light_pct }}%; background:#4a90d9; height:100%;"></div>{% endif %}
+            {% if awake_pct > 0 %}<div style="width:{{ awake_pct }}%; background:#ff4757; height:100%;"></div>{% endif %}
+          {% endif %}
+        </div>
+        <div style="display:flex; gap:.4rem; font-size:.65rem; margin-top:.3rem; flex-wrap:wrap;">
+          {% if r.deep_sleep_minutes %}<span style="color:#7c3aed;">D:{{ (r.deep_sleep_minutes|int) }}m</span>{% endif %}
+          {% if r.rem_sleep_minutes %}<span style="color:#00e5ff;">R:{{ (r.rem_sleep_minutes|int) }}m</span>{% endif %}
+          {% if r.light_sleep_minutes %}<span style="color:#4a90d9;">L:{{ (r.light_sleep_minutes|int) }}m</span>{% endif %}
+          {% if r.awake_minutes %}<span style="color:#ff4757;">A:{{ (r.awake_minutes|int) }}m</span>{% endif %}
+        </div>
+      </div>
+      <span style="color:{{ rhr_color }}">{{ r.resting_heart_rate | int if r.resting_heart_rate else '—' }}</span>
+      <span style="color:var(--accent)">{{ r.hrv | int if r.hrv else '—' }}</span>
+      <span>{{ r.spo2 | int if r.spo2 else '—' }}%</span>
+      <span class="tag tag-{{ r.cognitive_score or 'neutral' }}" style="font-size:.65rem;">{{ (r.cognitive_score or '—') | upper }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+</div>
+{% endif %}
+{% endblock %}
