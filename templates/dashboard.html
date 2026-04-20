@@ -105,8 +105,23 @@
 {% block content %}
 <div class="page-header">
   <div class="live-dot"></div>
-  <h1 class="glow">Workforce Intelligence</h1>
+  <h1 class="glow">
+    {% if current_user.role == 'employee' %}My Readiness{% else %}Workforce Intelligence{% endif %}
+  </h1>
 </div>
+{% if current_user.role == 'employee' and not readings %}
+<div class="card no-data">
+  <div style="font-size:2rem; margin-bottom:1rem;">📡</div>
+  <div>No sleep data yet.</div>
+  <div style="margin-top:.5rem; font-size:.85rem; color:var(--muted);">
+    Configure your webhook in your profile to start sending data from your watch.
+  </div>
+  <a href="{{ url_for('profile') }}"
+     style="display:inline-block;margin-top:1rem;color:var(--accent);font-family:var(--mono);font-size:.85rem;text-decoration:none;">
+    Go to Profile → Setup Webhook
+  </a>
+</div>
+{% endif %}
 
 {% if readings %}
   <!-- Summary stats -->
@@ -180,12 +195,12 @@
     {% endfor %}
   </div>
 
-{% else %}
+{% elif current_user.role != 'employee' %}
   <div class="card no-data">
     <div style="font-size:2rem; margin-bottom:1rem;">📡</div>
-    <div>No data received yet.</div>
-    <div style="margin-top:.5rem; font-size:.85rem;">Waiting for watch webhook or use the test endpoint.</div>
-    <code>GET /test/inject?employee_id=emp_001</code>
+    <div>No data received in the last 7 days.</div>
+    <div style="margin-top:.5rem; font-size:.85rem;">Waiting for watch webhooks or use the test endpoint.</div>
+    <code>GET /test/inject</code>
   </div>
 {% endif %}
 {% endblock %}
