@@ -2,7 +2,7 @@
 
 > Workforce wellbeing intelligence platform — not surveillance, support.
 
-CogniFlow connects Samsung Galaxy Watch biometric data to a team-level health visibility dashboard. Employees get a personal sleep and recovery dashboard. Managers see only anonymised, aggregated team health signals — never individual data.
+CogniFlow connects Samsung Galaxy Watch physiological data to a team-level health visibility dashboard. Employees get a personal sleep and recovery dashboard. Managers see only anonymised, aggregated team health signals — never individual data.
 
 ---
 
