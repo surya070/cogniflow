@@ -1,0 +1,405 @@
+{% extends "base.html" %}
+{% block title %}Cogniflow — Dashboard{% endblock %}
+
+{% block head %}
+<style>
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1.25rem;
+  }
+
+  .employee-card {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+    transition: transform .2s, border-color .2s;
+  }
+  .employee-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--accent);
+  }
+
+  .emp-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+  }
+
+  .score-ring {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid;
+    flex-shrink: 0;
+    font-family: var(--mono);
+  }
+  .ring-high     { border-color: var(--green);  box-shadow: 0 0 16px rgba(0,255,163,.2); }
+  .ring-moderate { border-color: var(--yellow); box-shadow: 0 0 16px rgba(255,214,10,.2); }
+  .ring-low      { border-color: var(--red);    box-shadow: 0 0 16px rgba(255,71,87,.2); }
+  .ring-high .ring-num     { color: var(--green); }
+  .ring-moderate .ring-num { color: var(--yellow); }
+  .ring-low .ring-num      { color: var(--red); }
+  .ring-num   { font-size: 1.2rem; font-weight: 700; line-height: 1; }
+  .ring-label { font-size: .55rem; color: var(--muted); letter-spacing: .05em; }
+
+  .readiness-bar-bg {
+    background: rgba(0,0,0,.4);
+    border-radius: 99px;
+    height: 5px;
+    overflow: hidden;
+    margin-top: .4rem;
+  }
+  .readiness-bar-fill {
+    height: 100%;
+    border-radius: 99px;
+    transition: width .6s ease;
+  }
+  .bar-high     { background: linear-gradient(90deg, #00ffa3, #00e5ff); }
+  .bar-moderate { background: linear-gradient(90deg, #ffd60a, #ff9500); }
+  .bar-low      { background: linear-gradient(90deg, #ff4757, #ff6b81); }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: .75rem;
+    margin-bottom: 2rem;
+    max-width: 480px;
+  }
+  .stat-box {
+    background: rgba(0,0,0,.3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: .85rem;
+    text-align: center;
+  }
+  .stat-num {
+    font-family: var(--mono);
+    font-size: 1.4rem;
+    font-weight: 700;
+  }
+  .stat-label {
+    font-size: .7rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    margin-top: .25rem;
+  }
+
+  .no-data {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header" style="justify-content:space-between; flex-wrap:wrap; gap:.75rem;">
+  <div style="display:flex; align-items:center; gap:.75rem;">
+    <div class="live-dot"></div>
+    <h1 class="glow">My Readiness</h1>
+  </div>
+  {% if current_user.role in ('manager', 'admin') %}
+  <a href="{{ url_for('manager_portal') }}" class="btn btn-secondary" style="font-size:.82rem;">
+    👥 Team View
+  </a>
+  {% endif %}
+</div>
+
+{% if current_user.role == 'employee' and not readings %}
+<div class="card no-data">
+  <div style="font-size:2rem; margin-bottom:1rem;">📡</div>
+  <div>No sleep data yet.</div>
+  <div style="margin-top:.5rem; font-size:.85rem; color:var(--muted);">
+    Configure your Health Connect automation in your profile to start receiving data.
+  </div>
+  <a href="{{ url_for('profile') }}"
+     style="display:inline-block;margin-top:1rem;color:var(--accent);font-family:var(--mono);font-size:.85rem;text-decoration:none;">
+    Go to Profile → Setup Webhook
+  </a>
+</div>
+{% endif %}
+
+{% if readings %}
+  {% set green_count = readings | selectattr('readiness_color', 'equalto', 'high')     | list | length %}
+  {% set amber_count = readings | selectattr('readiness_color', 'equalto', 'moderate') | list | length %}
+  {% set red_count   = readings | selectattr('readiness_color', 'equalto', 'low')      | list | length %}
+
+  <div class="stat-grid">
+    <div class="stat-box">
+      <div class="stat-num" style="color:var(--green)">{{ green_count }}</div>
+      <div class="stat-label">Well Recovered</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num" style="color:var(--yellow)">{{ amber_count }}</div>
+      <div class="stat-label">Moderate</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num" style="color:var(--red)">{{ red_count }}</div>
+      <div class="stat-label">Low Energy</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    {% for r in readings %}
+      {% set color = r.readiness_color %}
+      {% set score = r.energy_score %}
+      {% set sleep_hrs = ((r.total_sleep_minutes or 0) / 60) | round(1) %}
+
+      <a href="/employee/{{ r.employee_id }}" class="card employee-card">
+        <div class="emp-header">
+          <div style="flex:1; min-width:0; margin-right:1rem;">
+            {% set display_name = r.employee_id %}
+            {% if current_user.role == 'employee' %}
+              {% set display_name = current_user.name %}
+            {% endif %}
+            <div style="font-weight:700; font-size:1rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+              {{ display_name }}
+            </div>
+            <div style="font-family:var(--mono); font-size:.75rem; color:var(--muted); margin-top:.2rem;">
+              {{ r.sleep_date or '—' }}
+            </div>
+          </div>
+          <div class="score-ring ring-{{ color }}">
+            <span class="ring-num">{{ (score | int) if score is not none else '?' }}</span>
+            <span class="ring-label">ENERGY</span>
+          </div>
+        </div>
+
+        <div style="margin-bottom:.75rem;">
+          <div style="display:flex; justify-content:space-between; font-size:.72rem; color:var(--muted); margin-bottom:.3rem;">
+            <span>Recovery Score</span>
+            <span style="font-family:var(--mono); color:{% if color=='high' %}var(--green){% elif color=='moderate' %}var(--yellow){% else %}var(--red){% endif %};">
+              {% if color == 'high' %}Well Recovered{% elif color == 'moderate' %}Moderate{% else %}Low Energy{% endif %}
+            </span>
+          </div>
+          <div class="readiness-bar-bg">
+            <div class="readiness-bar-fill bar-{{ color }}"
+                 style="width:{{ (score | int) if score is not none else 0 }}%"></div>
+          </div>
+        </div>
+
+        <div class="metric-row">
+          <div class="metric">💤 <span class="metric-val">{{ sleep_hrs }}h</span> sleep</div>
+          {% if r.resting_heart_rate %}
+          <div class="metric">❤️ <span class="metric-val">{{ r.resting_heart_rate | int }}</span> bpm</div>
+          {% endif %}
+          {% if r.spo2 %}
+          <div class="metric">🫁 <span class="metric-val">{{ r.spo2 | int }}%</span> SpO2</div>
+          {% endif %}
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+
+{% else %}
+  <div class="card no-data">
+    <div style="font-size:2rem; margin-bottom:1rem;">📡</div>
+    <div>No data received in the last 7 days.</div>
+    <div style="margin-top:.5rem; font-size:.85rem; color:var(--muted);">
+      Configure Health Connect on your phone to start syncing.
+    </div>
+    <a href="{{ url_for('profile') }}"
+       style="display:inline-block;margin-top:1rem;color:var(--accent);font-family:var(--mono);font-size:.85rem;text-decoration:none;">
+      Go to Profile → Setup Webhook
+    </a>
+  </div>
+{% endif %}
+
+<!-- Google Calendar -->
+<div class="card" style="margin-top:1.5rem;" id="calendarSection">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; flex-wrap:wrap; gap:.5rem;">
+    <h3>Today's Schedule</h3>
+    <div style="display:flex; gap:.5rem; align-items:center;">
+      <span id="calStatusDot" style="width:8px;height:8px;border-radius:50%;background:var(--border);display:inline-block;"></span>
+      <span id="calStatusText" style="font-family:var(--mono);font-size:.72rem;color:var(--muted);">Not connected</span>
+      <button id="calConnectBtn" class="btn btn-secondary" style="font-size:.78rem; padding:.35rem .8rem;" onclick="connectCalendar()">
+        Connect Google Calendar
+      </button>
+    </div>
+  </div>
+
+  <div id="calLoadingMsg" style="display:none; color:var(--muted); font-size:.85rem; font-family:var(--mono); padding:.5rem 0;">
+    Loading events…
+  </div>
+
+  <div id="calEvents" style="display:none;">
+    <div id="calFlagBanner" style="display:none; margin-bottom:.75rem;"></div>
+    <div id="calEventList"></div>
+  </div>
+
+  <div id="calEmpty" style="display:none; color:var(--muted); font-family:var(--mono); font-size:.85rem; padding:.5rem 0;">
+    No events scheduled for today.
+  </div>
+</div>
+
+<script>
+(function() {
+  // Load GAPI
+  const script = document.createElement('script');
+  script.src = 'https://apis.google.com/js/api.js';
+  script.onload = () => gapi.load('client:auth2', initClient);
+  document.head.appendChild(script);
+
+  let energyScore = null;
+  let energyColor = 'neutral';
+
+  // Fetch this user's latest energy score
+  fetch('/api/me/today-score')
+    .then(r => r.json())
+    .then(d => { energyScore = d.score; energyColor = d.color || 'neutral'; })
+    .catch(() => {});
+
+  function initClient() {
+    fetch('/api/me/google-client-id')
+      .then(r => r.json())
+      .then(({ client_id }) => {
+        if (!client_id) return;
+        gapi.client.init({
+          clientId: client_id,
+          scope: 'https://www.googleapis.com/auth/calendar.readonly',
+          discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest'],
+        }).then(() => {
+          const auth = gapi.auth2.getAuthInstance();
+          if (auth.isSignedIn.get()) {
+            document.getElementById('calConnectBtn').style.display = 'none';
+            loadEvents();
+          }
+        });
+      });
+  }
+
+  window.connectCalendar = function() {
+    if (typeof gapi === 'undefined') return;
+    const auth = gapi.auth2.getAuthInstance();
+    if (!auth) return;
+    auth.signIn().then(() => {
+      document.getElementById('calConnectBtn').style.display = 'none';
+      loadEvents();
+    }).catch(console.error);
+  };
+
+  function loadEvents() {
+    const dot  = document.getElementById('calStatusDot');
+    const txt  = document.getElementById('calStatusText');
+    dot.style.background = 'var(--green)';
+    txt.textContent = 'Connected';
+
+    document.getElementById('calLoadingMsg').style.display = 'block';
+
+    const now   = new Date();
+    const start = new Date(now); start.setHours(0,0,0,0);
+    const end   = new Date(now); end.setHours(23,59,59,999);
+
+    gapi.client.calendar.events.list({
+      calendarId: 'primary',
+      timeMin: start.toISOString(),
+      timeMax: end.toISOString(),
+      singleEvents: true,
+      orderBy: 'startTime',
+      maxResults: 20,
+    }).then(resp => {
+      document.getElementById('calLoadingMsg').style.display = 'none';
+      const events = resp.result.items || [];
+
+      if (events.length === 0) {
+        document.getElementById('calEmpty').style.display = 'block';
+        return;
+      }
+
+      renderEvents(events);
+    }).catch(err => {
+      document.getElementById('calLoadingMsg').style.display = 'none';
+      document.getElementById('calStatusText').textContent = 'Error loading events';
+      console.error(err);
+    });
+  }
+
+  function renderEvents(events) {
+    const container = document.getElementById('calEventList');
+    const banner    = document.getElementById('calFlagBanner');
+    document.getElementById('calEvents').style.display = 'block';
+
+    // Build flag message based on energy score
+    if (energyScore !== null) {
+      const heavyCount = events.filter(e => isHeavyEvent(e)).length;
+      if (energyScore < 40 && heavyCount > 0) {
+        banner.style.display = 'flex';
+        banner.innerHTML = `
+          <div style="background:rgba(255,71,87,.1);border:1px solid rgba(255,71,87,.3);border-radius:8px;padding:.75rem 1rem;display:flex;gap:.75rem;align-items:flex-start;width:100%;box-sizing:border-box;">
+            <span style="font-size:1.1rem;flex-shrink:0;">⚠️</span>
+            <div style="font-size:.83rem;line-height:1.5;">
+              <strong style="color:#ff9999;">Low energy today (${Math.round(energyScore)}/100).</strong>
+              You have ${heavyCount} demanding event${heavyCount>1?'s':''} scheduled.
+              Consider rescheduling or reducing scope where possible.
+            </div>
+          </div>`;
+      } else if (energyScore >= 40 && energyScore < 70 && heavyCount >= 3) {
+        banner.style.display = 'flex';
+        banner.innerHTML = `
+          <div style="background:rgba(255,214,10,.07);border:1px solid rgba(255,214,10,.25);border-radius:8px;padding:.75rem 1rem;display:flex;gap:.75rem;align-items:flex-start;width:100%;box-sizing:border-box;">
+            <span style="font-size:1.1rem;flex-shrink:0;">💡</span>
+            <div style="font-size:.83rem;line-height:1.5;color:var(--muted);">
+              Moderate recovery (${Math.round(energyScore)}/100) with a busy day ahead.
+              Pace yourself — take short breaks between back-to-back blocks.
+            </div>
+          </div>`;
+      }
+    }
+
+    container.innerHTML = events.map(e => {
+      const heavy = isHeavyEvent(e);
+      const overloaded = energyScore !== null && energyScore < 40 && heavy;
+      const time = formatEventTime(e);
+      return `
+        <div style="display:flex;align-items:flex-start;gap:.75rem;padding:.6rem 0;border-bottom:1px solid var(--border);">
+          <div style="flex-shrink:0;width:4px;height:100%;min-height:36px;border-radius:2px;
+               background:${overloaded ? '#ff4757' : heavy ? '#ffd60a' : 'var(--accent)'};
+               align-self:stretch;"></div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:.875rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+              ${escHtml(e.summary || '(no title)')}
+              ${overloaded ? '<span style="font-size:.7rem;color:#ff9999;margin-left:.4rem;font-family:var(--mono);">too much today?</span>' : ''}
+            </div>
+            <div style="font-size:.75rem;color:var(--muted);font-family:var(--mono);margin-top:.15rem;">${time}</div>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  function isHeavyEvent(e) {
+    // Flag as demanding if it's a meeting (has attendees), a long block (>1h), or keywords
+    const title = (e.summary || '').toLowerCase();
+    const heavyKeywords = ['review', 'interview', 'presentation', 'demo', 'exam', 'deadline',
+                           'standup', 'planning', 'sprint', 'sync', 'meeting', 'call'];
+    if (heavyKeywords.some(k => title.includes(k))) return true;
+    if (e.attendees && e.attendees.length > 1) return true;
+    // Duration > 60 min
+    if (e.start && e.end) {
+      const dur = (new Date(e.end.dateTime||e.end.date) - new Date(e.start.dateTime||e.start.date)) / 60000;
+      if (dur > 60) return true;
+    }
+    return false;
+  }
+
+  function formatEventTime(e) {
+    if (!e.start) return 'All day';
+    if (e.start.date) return 'All day';
+    const s = new Date(e.start.dateTime);
+    const en = new Date(e.end.dateTime);
+    const fmt = d => d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    return `${fmt(s)} – ${fmt(en)}`;
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,454 @@
+{% extends "base.html" %}
+{% block title %}
+  {% if user_obj %}{{ user_obj.name }}{% else %}{{ employee_id }}{% endif %} — Cogniflow
+{% endblock %}
+
+{% block head %}
+<style>
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+  }
+  @media (max-width: 768px) { .detail-grid { grid-template-columns: 1fr; } }
+  .full-width { grid-column: 1 / -1; }
+
+  /* Energy score hero */
+  .energy-hero {
+    text-align: center;
+    padding: 1.5rem 1rem;
+  }
+  .energy-circle {
+    width: 130px; height: 130px;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1rem;
+    font-family: var(--mono);
+    border: 3px solid;
+    position: relative;
+  }
+  .circle-high     { border-color: var(--green);  box-shadow: 0 0 40px rgba(0,255,163,.25); }
+  .circle-moderate { border-color: var(--yellow); box-shadow: 0 0 40px rgba(255,214,10,.25); }
+  .circle-low      { border-color: var(--red);    box-shadow: 0 0 40px rgba(255,71,87,.25); }
+  .circle-neutral  { border-color: var(--muted); }
+
+  .energy-num { font-size: 2.4rem; font-weight: 700; line-height: 1; }
+  .circle-high .energy-num     { color: var(--green); }
+  .circle-moderate .energy-num { color: var(--yellow); }
+  .circle-low .energy-num      { color: var(--red); }
+  .circle-neutral .energy-num  { color: var(--muted); }
+  .circle-sublabel { font-size: .6rem; color: var(--muted); letter-spacing: .1em; margin-top: .2rem; }
+
+  .readiness-label-text {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: .4rem;
+  }
+  .circle-high .readiness-label-text     { color: var(--green); }
+  .circle-moderate .readiness-label-text { color: var(--yellow); }
+  .circle-low .readiness-label-text      { color: var(--red); }
+
+  .stat-row {
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    font-size: .82rem;
+    color: var(--muted);
+  }
+  .stat-row span { color: var(--text); font-family: var(--mono); }
+
+  /* Sleep bar */
+  .sleep-bar-bg {
+    background: rgba(0,0,0,.4);
+    border-radius: 99px;
+    height: 4px;
+    overflow: hidden;
+  }
+  .sleep-bar-fill { height: 100%; border-radius: 99px; }
+
+  /* Vitals table */
+  .vitals-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: .6rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: .875rem;
+  }
+  .vitals-row:last-child { border-bottom: none; }
+  .vitals-label { color: var(--muted); }
+  .vitals-val   { font-family: var(--mono); color: var(--accent); font-weight: 600; }
+
+  /* Insight list */
+  .insight-list { list-style: none; }
+  .insight-list li {
+    padding: .6rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: .875rem;
+    line-height: 1.5;
+    display: flex;
+    gap: .5rem;
+  }
+  .insight-list li:last-child { border-bottom: none; }
+
+  .warning-box {
+    background: rgba(255,71,87,.08);
+    border: 1px solid rgba(255,71,87,.3);
+    border-radius: 8px;
+    padding: 1rem;
+    font-size: .875rem;
+    color: #ff9999;
+    display: flex;
+    gap: .6rem;
+    align-items: flex-start;
+    margin-bottom: .75rem;
+  }
+
+  .task-section { margin-bottom: 1rem; }
+  .task-section h4 {
+    font-family: var(--mono);
+    font-size: .7rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    margin-bottom: .5rem;
+  }
+  .task-pill {
+    display: inline-block;
+    padding: .3rem .75rem;
+    border-radius: 6px;
+    font-size: .8rem;
+    margin: .2rem;
+  }
+  .task-do    { background: rgba(0,255,163,.1); color: var(--green); border: 1px solid rgba(0,255,163,.25); }
+  .task-avoid { background: rgba(255,71,87,.1); color: var(--red);   border: 1px solid rgba(255,71,87,.25); }
+
+  /* History table */
+  .history-row {
+    display: grid;
+    grid-template-columns: 90px 70px 70px 1fr 55px 55px 55px;
+    gap: .5rem;
+    padding: .6rem .5rem;
+    border-bottom: 1px solid var(--border);
+    font-size: .73rem;
+    align-items: center;
+    font-family: var(--mono);
+  }
+  .history-row:last-child { border-bottom: none; }
+  .history-header { color: var(--muted); font-size: .65rem; text-transform: uppercase; letter-spacing: .08em; }
+
+  /* Chart window buttons */
+  .window-btn {
+    padding: .3rem .7rem;
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: .72rem;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    transition: all .2s;
+  }
+  .window-btn.active, .window-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(0,229,255,.08);
+  }
+
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: .85rem;
+    margin-bottom: 1.5rem;
+    transition: color .2s;
+  }
+  .back-link:hover { color: var(--accent); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; flex-wrap:wrap; gap:.5rem;">
+  <a href="/" class="back-link">← Back</a>
+  {% if latest %}
+  <a href="/employee/{{ employee_id }}/heart-rate" class="btn btn-secondary" style="font-size:.8rem;">❤️ Heart Rate</a>
+  {% endif %}
+</div>
+
+<div class="page-header">
+  <div>
+    <h1>{% if user_obj %}{{ user_obj.name }}{% else %}{{ employee_id }}{% endif %}</h1>
+    {% if latest %}
+      <span class="tag tag-neutral" style="margin-top:.3rem; display:inline-block;">Last sync: {{ latest.sleep_date }}</span>
+    {% endif %}
+  </div>
+</div>
+
+{% if not latest %}
+  <div class="card" style="text-align:center; padding:3rem; color:var(--muted); font-family:var(--mono);">
+    No data found for this account.
+  </div>
+{% else %}
+
+<div class="detail-grid">
+
+  <!-- Energy Score Hero -->
+  <div class="card energy-hero">
+    {% set color = latest.readiness_color %}
+    <h3 style="margin-bottom:1.25rem;">Energy Score</h3>
+    <div class="energy-circle circle-{{ color }}">
+      <span class="energy-num">{{ (latest.energy_score | int) if latest.energy_score is not none else '?' }}</span>
+      <span class="circle-sublabel">/ 100</span>
+    </div>
+    <div class="readiness-label-text" style="color:{% if color=='high' %}var(--green){% elif color=='moderate' %}var(--yellow){% else %}var(--red){% endif %}">
+      {% if color == 'high' %}Well Recovered{% elif color == 'moderate' %}Moderate{% else %}Low Energy{% endif %}
+    </div>
+    {% if readiness_label and readiness_label != '-' %}
+    <div style="font-size:.85rem; color:var(--muted); margin-bottom:1rem;">{{ readiness_label }}</div>
+    {% endif %}
+    <div class="stat-row">
+      <div>Fatigue: <span>{{ (latest.fatigue_level or '—') | upper }}</span></div>
+      <div>Recovery: <span>{{ (latest.recovery_state or '—') | upper }}</span></div>
+    </div>
+  </div>
+
+  <!-- Sleep Breakdown -->
+  <div class="card">
+    <h3 style="margin-bottom:1rem;">Sleep Breakdown</h3>
+    {% set total_sleep = latest.total_sleep_minutes or 0 %}
+    {% set awake_time  = latest.awake_minutes or 0 %}
+    {% set total_all   = total_sleep + awake_time %}
+
+    <div style="font-family:var(--mono); font-size:2rem; color:var(--accent); font-weight:700;">
+      {{ total_all | format_duration }}
+    </div>
+    <div style="font-size:.8rem; color:var(--muted); margin-bottom:.5rem;">Time in bed</div>
+    <div style="font-size:.75rem; color:var(--muted); margin-bottom:.25rem;">
+      Actual sleep: <span style="color:var(--text);">{{ total_sleep | format_duration }}</span>
+      {% if awake_time %} · {{ (awake_time|int) }}m awake{% endif %}
+    </div>
+    {% if latest.sleep_efficiency_pct %}
+    <div style="font-size:.75rem; color:var(--muted); margin-bottom:1rem;">
+      Efficiency: <span style="color:{% if latest.sleep_efficiency_pct >= 85 %}var(--green){% elif latest.sleep_efficiency_pct >= 70 %}var(--yellow){% else %}var(--red){% endif %}">
+        {{ latest.sleep_efficiency_pct | round(1) }}%
+      </span>
+    </div>
+    {% else %}
+    <div style="margin-bottom:1rem;"></div>
+    {% endif %}
+
+    {% macro sleep_bar(label, minutes, color) %}
+      {% if minutes and total_all %}
+        {% set pct = ((minutes / total_all) * 100) | round(0) %}
+        <div style="margin-bottom:.65rem;">
+          <div style="display:flex; justify-content:space-between; font-size:.73rem; margin-bottom:.25rem;">
+            <span style="color:var(--muted);">{{ label }}</span>
+            <span style="font-family:var(--mono); color:{{ color }}">{{ minutes | format_duration }} ({{ pct }}%)</span>
+          </div>
+          <div class="sleep-bar-bg">
+            <div class="sleep-bar-fill" style="width:{{ pct }}%; background:{{ color }};"></div>
+          </div>
+        </div>
+      {% endif %}
+    {% endmacro %}
+
+    {{ sleep_bar("Deep",  latest.deep_sleep_minutes,  "#7c3aed") }}
+    {{ sleep_bar("REM",   latest.rem_sleep_minutes,   "#00e5ff") }}
+    {{ sleep_bar("Light", latest.light_sleep_minutes, "#4a90d9") }}
+    {{ sleep_bar("Awake", latest.awake_minutes,        "#ff4757") }}
+
+    <div style="margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border); font-size:.75rem; color:var(--muted);">
+      Bedtime: <span style="color:var(--text); font-family:var(--mono);">{{ latest.sleep_start | ist_time }}</span>
+      &nbsp;→&nbsp;
+      Wake: <span style="color:var(--text); font-family:var(--mono);">{{ latest.sleep_end | ist_time }}</span>
+      <span style="margin-left:.5rem; font-size:.65rem;">(IST)</span>
+    </div>
+  </div>
+
+  <!-- Vitals -->
+  <div class="card">
+    <h3 style="margin-bottom:1rem;">Vitals</h3>
+    {% if latest.resting_heart_rate %}
+    <div class="vitals-row">
+      <span class="vitals-label">❤️ Resting Heart Rate</span>
+      <span class="vitals-val"
+        style="color:{% if latest.resting_heart_rate <= 70 %}var(--green){% elif latest.resting_heart_rate <= 80 %}var(--yellow){% else %}var(--red){% endif %}">
+        {{ latest.resting_heart_rate | int }} bpm
+      </span>
+    </div>
+    {% endif %}
+    {% if latest.hrv %}
+    <div class="vitals-row">
+      <span class="vitals-label">📶 Heart Rate Variability</span>
+      <span class="vitals-val">{{ latest.hrv | int }} ms</span>
+    </div>
+    {% endif %}
+    {% if latest.spo2 %}
+    <div class="vitals-row">
+      <span class="vitals-label">🫁 Blood Oxygen (SpO2)</span>
+      <span class="vitals-val"
+        style="color:{% if latest.spo2 >= 95 %}var(--green){% elif latest.spo2 >= 90 %}var(--yellow){% else %}var(--red){% endif %}">
+        {{ latest.spo2 | int }}%
+      </span>
+    </div>
+    {% endif %}
+    {% if latest.sleep_efficiency_pct %}
+    <div class="vitals-row">
+      <span class="vitals-label">💤 Sleep Efficiency</span>
+      <span class="vitals-val"
+        style="color:{% if latest.sleep_efficiency_pct >= 85 %}var(--green){% elif latest.sleep_efficiency_pct >= 70 %}var(--yellow){% else %}var(--red){% endif %}">
+        {{ latest.sleep_efficiency_pct | round(1) }}%
+      </span>
+    </div>
+    {% endif %}
+    {% if latest.steps %}
+    <div class="vitals-row">
+      <span class="vitals-label">👟 Steps</span>
+      <span class="vitals-val">{{ "{:,}".format(latest.steps) }}</span>
+    </div>
+    {% endif %}
+    {% if latest.avg_heart_rate %}
+    <div class="vitals-row">
+      <span class="vitals-label">📊 Avg Overnight HR</span>
+      <span class="vitals-val">{{ latest.avg_heart_rate | int }} bpm</span>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Insights -->
+  {% if insights %}
+  <div class="card">
+    <h3 style="margin-bottom:1rem;">Today's Insights</h3>
+    <ul class="insight-list">
+      {% for insight in insights %}
+        <li><span style="color:var(--accent); flex-shrink:0;">›</span> {{ insight }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <!-- Energy History Chart -->
+  {% if energy_history and energy_history | length > 0 %}
+  <div class="card full-width">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; flex-wrap:wrap; gap:.5rem;">
+      <h3>History</h3>
+      <div style="display:flex; gap:.4rem;">
+        <button class="window-btn active" onclick="loadChart(7, this)">7 days</button>
+        <button class="window-btn" onclick="loadChart(30, this)">1 month</button>
+        <button class="window-btn" onclick="loadChart(180, this)">6 months</button>
+      </div>
+    </div>
+    <canvas id="historyChart" height="90"></canvas>
+  </div>
+  {% endif %}
+
+  <!-- 14-Day History Table -->
+  {% if readings | length > 1 %}
+  <div class="card full-width">
+    <h3 style="margin-bottom:1rem;">Sleep History (last 14 nights)</h3>
+    <div class="history-row history-header">
+      <span>Date</span>
+      <span>Sleep</span>
+      <span>Effic.</span>
+      <span>Stages</span>
+      <span>HR</span>
+      <span>SpO2</span>
+      <span>Energy</span>
+    </div>
+    {% for r in readings %}
+    <div class="history-row">
+      <span style="color:var(--muted)">{{ r.sleep_date }}</span>
+      <span style="color:var(--accent)">{{ (r.total_sleep_minutes or 0) | format_duration }}</span>
+      <span style="color:{% if r.sleep_efficiency_pct and r.sleep_efficiency_pct >= 85 %}var(--green){% elif r.sleep_efficiency_pct and r.sleep_efficiency_pct >= 70 %}var(--yellow){% else %}var(--muted){% endif %}">
+        {{ (r.sleep_efficiency_pct | round(0) | int ~ '%') if r.sleep_efficiency_pct else '—' }}
+      </span>
+      <div>
+        <div class="sleep-bar-bg" style="height:10px; display:flex; overflow:hidden; margin-bottom:.2rem;">
+          {% set ts = (r.deep_sleep_minutes or 0) + (r.rem_sleep_minutes or 0) + (r.light_sleep_minutes or 0) + (r.awake_minutes or 0) %}
+          {% if ts > 0 %}
+            {% if r.deep_sleep_minutes %}<div style="width:{{ ((r.deep_sleep_minutes/ts)*100)|round(1) }}%; background:#7c3aed; height:100%;"></div>{% endif %}
+            {% if r.rem_sleep_minutes  %}<div style="width:{{ ((r.rem_sleep_minutes/ts)*100)|round(1) }}%; background:#00e5ff; height:100%;"></div>{% endif %}
+            {% if r.light_sleep_minutes %}<div style="width:{{ ((r.light_sleep_minutes/ts)*100)|round(1) }}%; background:#4a90d9; height:100%;"></div>{% endif %}
+            {% if r.awake_minutes %}<div style="width:{{ ((r.awake_minutes/ts)*100)|round(1) }}%; background:#ff4757; height:100%;"></div>{% endif %}
+          {% endif %}
+        </div>
+        <div style="display:flex; gap:.3rem; font-size:.6rem;">
+          {% if r.deep_sleep_minutes %}<span style="color:#7c3aed;">D:{{ (r.deep_sleep_minutes|int) }}m</span>{% endif %}
+          {% if r.rem_sleep_minutes  %}<span style="color:#00e5ff;">R:{{ (r.rem_sleep_minutes|int) }}m</span>{% endif %}
+          {% if r.light_sleep_minutes %}<span style="color:#4a90d9;">L:{{ (r.light_sleep_minutes|int) }}m</span>{% endif %}
+        </div>
+      </div>
+      <span style="color:{% if r.resting_heart_rate and r.resting_heart_rate <= 70 %}var(--green){% elif r.resting_heart_rate and r.resting_heart_rate <= 80 %}var(--yellow){% else %}var(--muted){% endif %}">
+        {{ (r.resting_heart_rate | int ~ ' bpm') if r.resting_heart_rate else '—' }}
+      </span>
+      <span>{{ (r.spo2 | int ~ '%') if r.spo2 else '—' }}</span>
+      <span style="font-weight:700; color:{% if r.energy_score and r.energy_score >= 70 %}var(--green){% elif r.energy_score and r.energy_score >= 40 %}var(--yellow){% elif r.energy_score %}var(--red){% else %}var(--muted){% endif %}">
+        {{ (r.energy_score | int) if r.energy_score is not none else '—' }}
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+</div>
+{% endif %}
+
+{% if energy_history and energy_history | length > 1 %}
+<script>
+  const EMPLOYEE_ID = {{ employee_id | tojson }};
+  let chartInstance = null;
+
+  function loadChart(days, btn) {
+    document.querySelectorAll('.window-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    fetch(`/api/employee/${encodeURIComponent(EMPLOYEE_ID)}/energy-history?days=${days}`)
+      .then(r => r.json())
+      .then(data => {
+        const labels = data.map(d => d.date);
+        const energy = data.map(d => d.energy);
+
+        if (chartInstance) chartInstance.destroy();
+
+        const ctx = document.getElementById('historyChart').getContext('2d');
+        chartInstance = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Energy Score',
+              data: energy,
+              borderColor: '#00ffa3',
+              backgroundColor: 'rgba(0,255,163,.07)',
+              borderWidth: 2,
+              pointRadius: 3,
+              pointBackgroundColor: '#00ffa3',
+              tension: 0.3,
+              fill: true,
+            }]
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: { labels: { color: '#4a5568', font: { family: "'Space Mono'" }, boxWidth: 12 } },
+              tooltip: { backgroundColor: '#0d1420', borderColor: '#1a2540', borderWidth: 1, titleColor: '#e2e8f0', bodyColor: '#4a5568' }
+            },
+            scales: {
+              x: { ticks: { color: '#4a5568', font: { size: 10, family: "'Space Mono'" }, maxRotation: 45 }, grid: { color: 'rgba(26,37,64,.6)' } },
+              y: { min: 0, max: 100, ticks: { color: '#4a5568', font: { size: 10, family: "'Space Mono'" } }, grid: { color: 'rgba(26,37,64,.6)' } }
+            }
+          }
+        });
+      })
+      .catch(console.error);
+  }
+
+  loadChart(7, document.querySelector('.window-btn.active'));
+</script>
+{% endif %}
+{% endblock %}

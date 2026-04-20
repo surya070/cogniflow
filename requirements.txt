@@ -1,0 +1,13 @@
+flask
+flask-sqlalchemy
+flask-login
+google-generativeai
+python-dotenv
+authlib
+requests
+numpy
+pandas
+scikit-learn
+scipy
+joblib
+matplotlib

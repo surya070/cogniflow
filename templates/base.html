@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Cogniflow{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg:        #080c12;
+      --surface:   #0d1420;
+      --border:    #1a2540;
+      --accent:    #00e5ff;
+      --accent2:   #7c3aed;
+      --green:     #00ffa3;
+      --yellow:    #ffd60a;
+      --red:       #ff4757;
+      --text:      #e2e8f0;
+      --muted:     #4a5568;
+      --mono:      'Space Mono', monospace;
+      --sans:      'Syne', sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,229,255,.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,255,.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(8,12,18,.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 60px;
+    }
+
+    .logo {
+      font-family: var(--mono);
+      font-size: 1.1rem;
+      color: var(--accent);
+      letter-spacing: 0.1em;
+      text-decoration: none;
+    }
+    .logo span { color: var(--text); }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    nav a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: .85rem;
+      letter-spacing: .05em;
+      transition: color .2s;
+    }
+    nav a:hover { color: var(--accent); }
+    nav a.active { color: var(--accent); }
+
+    .nav-badge {
+      font-family: var(--mono);
+      font-size: .65rem;
+      padding: .15rem .45rem;
+      border-radius: 4px;
+      margin-left: .3rem;
+    }
+    .badge-manager { background: rgba(0,229,255,.15); color: var(--accent); border: 1px solid rgba(0,229,255,.3); }
+    .badge-admin   { background: rgba(124,58,237,.2); color: var(--accent2); border: 1px solid rgba(124,58,237,.4); }
+
+    main {
+      position: relative;
+      z-index: 1;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    /* Flash messages */
+    .flash-container {
+      position: relative;
+      z-index: 10;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: .75rem 2rem 0;
+    }
+    .alert {
+      padding: .75rem 1rem;
+      border-radius: 8px;
+      margin-bottom: .75rem;
+      font-size: .875rem;
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+    }
+    .alert-error   { background: rgba(255,71,87,.1);  color: var(--red);   border: 1px solid rgba(255,71,87,.3); }
+    .alert-success { background: rgba(0,255,163,.1);  color: var(--green); border: 1px solid rgba(0,255,163,.3); }
+    .alert-info    { background: rgba(0,229,255,.1);  color: var(--accent);border: 1px solid rgba(0,229,255,.3); }
+    .alert-warning { background: rgba(255,214,10,.1); color: var(--yellow);border: 1px solid rgba(255,214,10,.3); }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--accent2), var(--accent));
+    }
+
+    .tag {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: .7rem;
+      padding: .25rem .6rem;
+      border-radius: 4px;
+      letter-spacing: .05em;
+    }
+    .tag-high    { background: rgba(0,255,163,.12);  color: var(--green);  border: 1px solid rgba(0,255,163,.3); }
+    .tag-moderate{ background: rgba(255,214,10,.12); color: var(--yellow); border: 1px solid rgba(255,214,10,.3); }
+    .tag-low     { background: rgba(255,71,87,.12);  color: var(--red);    border: 1px solid rgba(255,71,87,.3); }
+    .tag-neutral { background: rgba(0,229,255,.12);  color: var(--accent); border: 1px solid rgba(0,229,255,.3); }
+
+    .metric-row {
+      display: flex;
+      gap: .5rem;
+      flex-wrap: wrap;
+      margin-top: .75rem;
+    }
+    .metric {
+      background: rgba(0,0,0,.3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: .5rem .85rem;
+      font-family: var(--mono);
+      font-size: .75rem;
+    }
+    .metric-val { color: var(--accent); font-weight: 700; }
+
+    h1 { font-size: 1.75rem; font-weight: 800; }
+    h2 { font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem; }
+    h3 { font-size: 1rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; font-family: var(--mono); }
+
+    .page-header {
+      margin-bottom: 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .glow { text-shadow: 0 0 20px var(--accent); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .4; }
+    }
+    .live-dot {
+      width: 8px; height: 8px;
+      background: var(--green);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+      box-shadow: 0 0 6px var(--green);
+    }
+
+    .btn {
+      display: inline-block;
+      padding: .5rem 1rem;
+      border-radius: 8px;
+      font-family: var(--mono);
+      font-size: .8rem;
+      cursor: pointer;
+      text-decoration: none;
+      border: none;
+      transition: all .2s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent2), var(--accent));
+      color: #000;
+      font-weight: 700;
+    }
+    .btn-primary:hover { opacity: .85; }
+    .btn-danger {
+      background: rgba(255,71,87,.1);
+      border: 1px solid rgba(255,71,87,.3);
+      color: var(--red);
+    }
+    .btn-danger:hover { background: rgba(255,71,87,.2); }
+    .btn-secondary {
+      background: rgba(0,229,255,.1);
+      border: 1px solid rgba(0,229,255,.3);
+      color: var(--accent);
+    }
+    .btn-secondary:hover { background: rgba(0,229,255,.2); }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <nav>
+    <a href="/" class="logo">COGNI<span>FLOW</span></a>
+    <div class="nav-links">
+      {% if current_user.is_authenticated %}
+        <a href="/" {% if request.endpoint == 'dashboard' %}class="active"{% endif %}>Dashboard</a>
+        <a href="{{ url_for('employee_detail', employee_id=current_user.employee_id) }}"
+           {% if request.endpoint == 'employee_detail' %}class="active"{% endif %}>My Data</a>
+        {% if current_user.role in ('manager', 'admin') %}
+          <a href="{{ url_for('manager_portal') }}"
+             {% if request.endpoint == 'manager_portal' %}class="active"{% endif %}>
+            Team<span class="nav-badge badge-manager">MGR</span>
+          </a>
+        {% endif %}
+        {% if current_user.role == 'admin' %}
+          <a href="{{ url_for('admin_portal') }}"
+             {% if request.endpoint == 'admin_portal' %}class="active"{% endif %}>
+            Admin<span class="nav-badge badge-admin">ADM</span>
+          </a>
+        {% endif %}
+        <a href="{{ url_for('profile') }}"
+           style="display:flex; align-items:center; gap:.5rem; color:var(--text);"
+           {% if request.endpoint == 'profile' %}class="active"{% endif %}>
+          {% if current_user.avatar_url %}
+            <img src="{{ current_user.avatar_url }}"
+                 style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border);" alt="">
+          {% else %}
+            <span style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,var(--accent2),var(--accent));display:inline-flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:800;color:#000;">
+              {{ current_user.name[0].upper() }}
+            </span>
+          {% endif %}
+          {{ current_user.name.split()[0] }}
+        </a>
+        <a href="{{ url_for('logout') }}" style="color:var(--muted); font-size:.8rem;">Sign out</a>
+      {% else %}
+        <a href="{{ url_for('login') }}">Sign in</a>
+        <a href="{{ url_for('register') }}"
+           style="background:linear-gradient(135deg,var(--accent2),var(--accent));color:#000;padding:.35rem .85rem;border-radius:6px;font-weight:700;font-size:.82rem;">
+          Register
+        </a>
+      {% endif %}
+    </div>
+  </nav>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flash-container">
+        {% for cat, msg in messages %}
+          <div class="alert alert-{{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

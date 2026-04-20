@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}Admin — Cogniflow{% endblock %}
+
+{% block head %}
+<style>
+  .users-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .82rem;
+  }
+  .users-table th {
+    text-align: left;
+    padding: .6rem .75rem;
+    font-family: var(--mono);
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .users-table td {
+    padding: .7rem .75rem;
+    border-bottom: 1px solid rgba(26,37,64,.6);
+    vertical-align: middle;
+  }
+  .users-table tr:last-child td { border-bottom: none; }
+  .users-table tr:hover td { background: rgba(0,229,255,.02); }
+
+  .role-form { display: flex; gap: .4rem; align-items: center; }
+  .role-select {
+    background: rgba(0,0,0,.4);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: .3rem .5rem;
+    font-family: var(--mono);
+    font-size: .72rem;
+    cursor: pointer;
+  }
+  .role-select:focus { outline: none; border-color: var(--accent); }
+
+  .dept-form { display: flex; gap: .4rem; align-items: center; }
+  .dept-input {
+    background: rgba(0,0,0,.4);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: .3rem .5rem;
+    font-family: var(--mono);
+    font-size: .72rem;
+    width: 120px;
+  }
+  .dept-input:focus { outline: none; border-color: var(--accent); }
+  .dept-input::placeholder { color: var(--muted); }
+
+  .apply-btn {
+    background: rgba(0,229,255,.1);
+    border: 1px solid rgba(0,229,255,.25);
+    border-radius: 5px;
+    color: var(--accent);
+    padding: .28rem .55rem;
+    font-family: var(--mono);
+    font-size: .68rem;
+    cursor: pointer;
+    transition: background .2s;
+  }
+  .apply-btn:hover { background: rgba(0,229,255,.2); }
+
+  .sharing-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .stat-row-admin {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  @media (max-width: 700px) { .stat-row-admin { grid-template-columns: repeat(2, 1fr); } }
+  .mini-stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem;
+    text-align: center;
+  }
+  .mini-num   { font-family: var(--mono); font-size: 1.6rem; font-weight: 700; color: var(--accent); }
+  .mini-label { font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-top: .2rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="glow">Admin</h1>
+  <span class="tag tag-neutral">{{ users | length }} users</span>
+</div>
+
+{% set employee_count = users | selectattr('role', 'equalto', 'employee') | list | length %}
+{% set manager_count  = users | selectattr('role', 'equalto', 'manager')  | list | length %}
+{% set sharing_count  = users | selectattr('share_readiness') | list | length %}
+
+<div class="stat-row-admin">
+  <div class="mini-stat">
+    <div class="mini-num">{{ users | length }}</div>
+    <div class="mini-label">Total Users</div>
+  </div>
+  <div class="mini-stat">
+    <div class="mini-num">{{ employee_count }}</div>
+    <div class="mini-label">Employees</div>
+  </div>
+  <div class="mini-stat">
+    <div class="mini-num">{{ manager_count }}</div>
+    <div class="mini-label">Managers</div>
+  </div>
+  <div class="mini-stat">
+    <div class="mini-num" style="color:var(--green)">{{ sharing_count }}</div>
+    <div class="mini-label">Sharing Data</div>
+  </div>
+</div>
+
+<div class="card">
+  <h3 style="margin-bottom:1.25rem;">User Management</h3>
+  <div style="overflow-x:auto;">
+    <table class="users-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Department</th>
+          <th>Sharing</th>
+          <th>Joined</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for user in users %}
+        <tr>
+          <td>
+            <div style="font-weight:600;">{{ user.name }}</div>
+          </td>
+          <td style="font-family:var(--mono); font-size:.75rem; color:var(--muted);">
+            {{ user.email }}
+          </td>
+          <td>
+            {% if user.id != current_user.id %}
+            <form class="role-form" method="POST"
+                  action="{{ url_for('admin_set_role', user_id=user.id) }}">
+              <select name="role" class="role-select" onchange="this.form.submit()">
+                <option value="employee" {{ 'selected' if user.role == 'employee' }}>Employee</option>
+                <option value="manager"  {{ 'selected' if user.role == 'manager'  }}>Manager</option>
+                <option value="admin"    {{ 'selected' if user.role == 'admin'    }}>Admin</option>
+              </select>
+            </form>
+            {% else %}
+              <span class="tag tag-neutral" style="font-size:.65rem;">{{ user.role }} (you)</span>
+            {% endif %}
+          </td>
+          <td>
+            <form class="dept-form" method="POST"
+                  action="{{ url_for('admin_set_department', user_id=user.id) }}">
+              <input type="text" name="department" class="dept-input"
+                     value="{{ user.department or '' }}"
+                     placeholder="e.g. Engineering">
+              <button type="submit" class="apply-btn">Set</button>
+            </form>
+          </td>
+          <td style="text-align:center;">
+            <span class="sharing-dot"
+                  style="background:{{ 'var(--green)' if user.share_readiness else 'var(--muted)' }};
+                         box-shadow:{{ '0 0 6px var(--green)' if user.share_readiness else 'none' }};"
+                  title="{{ 'Sharing enabled' if user.share_readiness else 'Sharing disabled' }}">
+            </span>
+          </td>
+          <td style="font-family:var(--mono); font-size:.72rem; color:var(--muted);">
+            {{ user.created_at.strftime('%b %d, %Y') }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card" style="margin-top:1.5rem;">
+  <h3 style="margin-bottom:.75rem;">Threshold Reference</h3>
+  <p style="font-size:.82rem; color:var(--muted); line-height:1.8; margin-bottom:.75rem;">
+    Energy scores are computed by a Ridge regression formula derived from real Samsung Energy Score readings,
+    then confirmed by a RandomForest model trained on 400 synthetic entries across 4 people.
+  </p>
+  <div style="display:flex; gap:1.5rem; font-size:.82rem; flex-wrap:wrap;">
+    <span style="color:var(--green);">&#9632; 70–100 — Well Recovered (green)</span>
+    <span style="color:var(--yellow);">&#9632; 40–69 — Moderate (amber)</span>
+    <span style="color:var(--red);">&#9632; 0–39 — Low Energy (red)</span>
+  </div>
+  <div style="margin-top:.75rem; font-size:.78rem; color:var(--muted);">
+    Stress score (0–100): derived from resting HR, sleep duration, and HRV when available.
+    Below 40 = calm, 40–65 = moderate stress, above 65 = elevated stress.
+  </div>
+</div>
+{% endblock %}

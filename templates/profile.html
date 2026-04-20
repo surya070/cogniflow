@@ -1,0 +1,387 @@
+{% extends "base.html" %}
+{% block title %}Profile — Cogniflow{% endblock %}
+
+{% block head %}
+<style>
+  .profile-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-top: 2rem;
+  }
+  @media (max-width: 760px) { .profile-grid { grid-column: 1fr; } }
+
+  .section-title {
+    font-family: var(--mono);
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--muted);
+    margin-bottom: 1.25rem;
+  }
+
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: .65rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: .875rem;
+  }
+  .info-row:last-child { border-bottom: none; }
+  .info-label { color: var(--muted); font-family: var(--mono); font-size: .8rem; }
+  .info-value { font-weight: 600; text-align: right; }
+
+  .role-badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: .68rem;
+    padding: .2rem .55rem;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .role-admin    { background: rgba(124,58,237,.2); color: var(--accent2); border: 1px solid rgba(124,58,237,.4); }
+  .role-manager  { background: rgba(0,229,255,.1);  color: var(--accent);  border: 1px solid rgba(0,229,255,.3); }
+  .role-employee { background: rgba(0,255,163,.1);  color: var(--green);   border: 1px solid rgba(0,255,163,.3); }
+
+  .full-col { grid-column: 1 / -1; }
+
+  .webhook-url-box {
+    background: rgba(0,0,0,.5);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: .85rem 1rem;
+    font-family: var(--mono);
+    font-size: .78rem;
+    color: var(--accent);
+    word-break: break-all;
+    line-height: 1.6;
+    margin: .75rem 0;
+    display: flex;
+    align-items: flex-start;
+    gap: .75rem;
+  }
+  .webhook-url-text { flex: 1; }
+
+  .btn-copy {
+    flex-shrink: 0;
+    background: rgba(0,229,255,.1);
+    border: 1px solid rgba(0,229,255,.3);
+    border-radius: 6px;
+    color: var(--accent);
+    padding: .35rem .7rem;
+    font-family: var(--mono);
+    font-size: .72rem;
+    cursor: pointer;
+    transition: background .2s;
+    white-space: nowrap;
+  }
+  .btn-copy:hover { background: rgba(0,229,255,.2); }
+  .btn-copy.copied { color: var(--green); border-color: rgba(0,255,163,.4); background: rgba(0,255,163,.1); }
+
+  .steps-list {
+    list-style: none;
+    counter-reset: steps;
+    margin-top: .5rem;
+  }
+  .steps-list li {
+    counter-increment: steps;
+    display: flex;
+    gap: .85rem;
+    padding: .65rem 0;
+    font-size: .875rem;
+    border-bottom: 1px solid var(--border);
+    line-height: 1.5;
+  }
+  .steps-list li:last-child { border-bottom: none; }
+  .steps-list li::before {
+    content: counter(steps);
+    min-width: 22px; height: 22px;
+    background: rgba(0,229,255,.12);
+    border: 1px solid rgba(0,229,255,.3);
+    border-radius: 50%;
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: .72rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .token-section {
+    margin-top: 1.25rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .token-info { font-size: .8rem; color: var(--muted); line-height: 1.5; }
+
+  /* Sharing toggle */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 0;
+  }
+  .toggle-info { flex: 1; }
+  .toggle-info h4 { font-size: .9rem; font-weight: 600; margin-bottom: .25rem; }
+  .toggle-info p  { font-size: .82rem; color: var(--muted); line-height: 1.5; }
+
+  .toggle-switch {
+    position: relative;
+    width: 46px; height: 26px;
+    flex-shrink: 0;
+  }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider {
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,.1);
+    border-radius: 26px;
+    cursor: pointer;
+    transition: background .3s;
+    border: 1px solid var(--border);
+  }
+  .toggle-slider:before {
+    content: '';
+    position: absolute;
+    width: 18px; height: 18px;
+    left: 3px; top: 3px;
+    background: var(--muted);
+    border-radius: 50%;
+    transition: transform .3s, background .3s;
+  }
+  input:checked + .toggle-slider { background: rgba(0,255,163,.2); border-color: rgba(0,255,163,.4); }
+  input:checked + .toggle-slider:before { transform: translateX(20px); background: var(--green); }
+
+  .avatar { width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--border); object-fit: cover; }
+  .avatar-placeholder {
+    width: 48px; height: 48px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--sans); font-weight: 800; font-size: 1.1rem; color: #000; flex-shrink: 0;
+  }
+
+  .note-box {
+    background: rgba(0,229,255,.05);
+    border: 1px solid rgba(0,229,255,.15);
+    border-radius: 8px;
+    padding: .85rem 1rem;
+    font-size: .82rem;
+    color: var(--muted);
+    line-height: 1.6;
+    margin-top: .75rem;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  {% if current_user.avatar_url %}
+    <img src="{{ current_user.avatar_url }}" class="avatar" alt="avatar">
+  {% else %}
+    <div class="avatar-placeholder">{{ current_user.name[0].upper() }}</div>
+  {% endif %}
+  <div>
+    <h1>{{ current_user.name }}</h1>
+    <div style="color:var(--muted); font-size:.875rem; margin-top:.2rem;">{{ current_user.email }}</div>
+  </div>
+</div>
+
+<div class="profile-grid">
+
+  <!-- Account info -->
+  <div class="card">
+    <div class="section-title">Account</div>
+    <div class="info-row">
+      <span class="info-label">Name</span>
+      <span class="info-value">{{ current_user.name }}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Email</span>
+      <span class="info-value" style="font-family:var(--mono); font-size:.82rem;">{{ current_user.email }}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Role</span>
+      <span class="info-value">
+        <span class="role-badge role-{{ current_user.role }}">{{ current_user.role }}</span>
+      </span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Auth method</span>
+      <span class="info-value" style="font-size:.8rem; color:var(--muted);">
+        {% if current_user.google_id %}Google OAuth{% endif %}
+        {% if current_user.password_hash and current_user.google_id %} &amp; {% endif %}
+        {% if current_user.password_hash %}Password{% endif %}
+      </span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Member since</span>
+      <span class="info-value" style="font-family:var(--mono); font-size:.8rem; color:var(--muted);">
+        {{ current_user.created_at.strftime('%b %d, %Y') }}
+      </span>
+    </div>
+    {% if current_user.department %}
+    <div class="info-row">
+      <span class="info-label">Department</span>
+      <span class="info-value" style="font-size:.85rem;">{{ current_user.department }}</span>
+    </div>
+    {% endif %}
+    <div style="margin-top:1rem;">
+      <a href="{{ url_for('employee_detail', employee_id=current_user.employee_id) }}"
+         style="color:var(--accent); font-family:var(--mono); font-size:.8rem; text-decoration:none;">
+        View my health data →
+      </a>
+    </div>
+  </div>
+
+  <!-- Privacy / Sharing -->
+  <div class="card">
+    <div class="section-title">Privacy & Sharing</div>
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <h4>Share readiness with team dashboard</h4>
+        <p>
+          When on, only your <strong style="color:var(--text);">aggregate status</strong>
+          (green / amber / red) is visible to managers — never your raw scores,
+          biometrics, or name. Off by default.
+        </p>
+      </div>
+      <form method="POST" action="{{ url_for('toggle_sharing') }}" style="display:flex; align-items:center;">
+        <label class="toggle-switch">
+          <input type="checkbox" {{ 'checked' if current_user.share_readiness else '' }}
+                 onchange="this.form.submit()">
+          <span class="toggle-slider"></span>
+        </label>
+      </form>
+    </div>
+    <div class="note-box">
+      Your biometric data is <strong style="color:var(--text);">never sold</strong> and never
+      used outside this organisation. Cogniflow is a wellness tool — your data cannot be
+      used in performance reviews or disciplinary decisions.
+    </div>
+  </div>
+
+  <!-- Demographics -->
+  <div class="card">
+    <div class="section-title">Health Profile</div>
+    <p style="font-size:.82rem; color:var(--muted); line-height:1.5; margin-bottom:1rem;">
+      Used by the ML model to personalise your Energy Score. Without these, defaults are used (age 25, M, 170 cm, 70 kg).
+    </p>
+    <form method="POST" action="{{ url_for('update_profile_details') }}">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:.75rem; margin-bottom:1rem;">
+        <div>
+          <label style="font-family:var(--mono); font-size:.72rem; color:var(--muted); display:block; margin-bottom:.35rem;">Age</label>
+          <input type="number" name="age" min="10" max="100"
+                 value="{{ current_user.age or '' }}" placeholder="25"
+                 style="width:100%; background:rgba(0,0,0,.4); border:1px solid var(--border); border-radius:6px; padding:.5rem .75rem; color:var(--text); font-family:var(--mono); font-size:.85rem;">
+        </div>
+        <div>
+          <label style="font-family:var(--mono); font-size:.72rem; color:var(--muted); display:block; margin-bottom:.35rem;">Sex</label>
+          <select name="sex" style="width:100%; background:rgba(0,0,0,.4); border:1px solid var(--border); border-radius:6px; padding:.5rem .75rem; color:var(--text); font-family:var(--mono); font-size:.85rem;">
+            <option value="">— select —</option>
+            <option value="M" {% if current_user.sex == 'M' %}selected{% endif %}>Male</option>
+            <option value="F" {% if current_user.sex == 'F' %}selected{% endif %}>Female</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-family:var(--mono); font-size:.72rem; color:var(--muted); display:block; margin-bottom:.35rem;">Height (cm)</label>
+          <input type="number" name="height_cm" min="100" max="250" step="0.1"
+                 value="{{ current_user.height_cm or '' }}" placeholder="170"
+                 style="width:100%; background:rgba(0,0,0,.4); border:1px solid var(--border); border-radius:6px; padding:.5rem .75rem; color:var(--text); font-family:var(--mono); font-size:.85rem;">
+        </div>
+        <div>
+          <label style="font-family:var(--mono); font-size:.72rem; color:var(--muted); display:block; margin-bottom:.35rem;">Weight (kg)</label>
+          <input type="number" name="weight_kg" min="30" max="200" step="0.1"
+                 value="{{ current_user.weight_kg or '' }}" placeholder="70"
+                 style="width:100%; background:rgba(0,0,0,.4); border:1px solid var(--border); border-radius:6px; padding:.5rem .75rem; color:var(--text); font-family:var(--mono); font-size:.85rem;">
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;">Save &amp; Recalculate Scores</button>
+    </form>
+  </div>
+
+  <!-- Webhook setup — full width -->
+  <div class="card full-col">
+    <div class="section-title">Health Connect Webhook Setup</div>
+    <p style="font-size:.875rem; color:var(--muted); line-height:1.6; margin-bottom:1rem;">
+      Use <strong style="color:var(--text);">Health Connect</strong> on your Android phone to push
+      Samsung Galaxy Watch data to Cogniflow automatically. The webhook URL below is personal
+      and token-protected — only devices using this exact URL can send data to your account.
+    </p>
+
+    <div style="font-family:var(--mono); font-size:.75rem; color:var(--muted); margin-bottom:.35rem;">
+      Your personal webhook URL
+    </div>
+    <div class="webhook-url-box">
+      <span class="webhook-url-text" id="webhookUrl">{{ webhook_url }}</span>
+      <button class="btn-copy" onclick="copyWebhook()" id="copyBtn">Copy</button>
+    </div>
+
+    <div class="section-title" style="margin-top:1.5rem; margin-bottom:.75rem;">
+      Setup Instructions
+    </div>
+    <ol class="steps-list">
+      <li>
+        Install <strong>Health Connect</strong> on your Android phone from the Google Play Store
+        (it may already be pre-installed on Samsung devices).
+      </li>
+      <li>
+        Open Health Connect → <strong>App permissions</strong> → make sure
+        <em>Samsung Health</em> is allowed to write Sleep, Heart Rate, SpO2, and Steps.
+      </li>
+      <li>
+        Install a webhook automation app such as <strong>HTTP Shortcuts</strong> or
+        <strong>Tasker</strong> on your phone.
+      </li>
+      <li>
+        Create an automation that fires every morning (e.g. at 8:00 AM) and sends a
+        <strong>POST</strong> request to the webhook URL above with your Health Connect
+        sleep/HR/SpO2/steps data in <strong>JSON format</strong>.
+      </li>
+      <li>
+        Alternatively, use <strong>Health Auto Export</strong> (iOS/Android):
+        go to <em>Automations → REST API</em>, set the URL above, method POST, format JSON,
+        and enable Sleep Analysis, Heart Rate, SpO2, and Steps.
+      </li>
+      <li>
+        Trigger a manual sync — your data will appear on your dashboard within seconds
+        (processing happens in the background so the app does not time out).
+      </li>
+    </ol>
+
+    <div class="token-section">
+      <div class="token-info">
+        <strong style="color:var(--text);">Security:</strong> your token is secret.
+        Anyone with this URL can upload data to your account.
+        Regenerate it if you believe it has been leaked.
+      </div>
+      <form method="POST" action="{{ url_for('regenerate_token') }}"
+            onsubmit="return confirm('Regenerate token? Your current webhook URL will stop working immediately.');">
+        <button type="submit" class="btn btn-danger">Regenerate Token</button>
+      </form>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function copyWebhook() {
+  const url = document.getElementById('webhookUrl').innerText.trim();
+  const btn = document.getElementById('copyBtn');
+  navigator.clipboard.writeText(url).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+</script>
+{% endblock %}

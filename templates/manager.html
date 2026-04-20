@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}Team Overview — Cogniflow{% endblock %}
+
+{% block head %}
+<style>
+  .overview-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  @media (max-width: 700px) { .overview-grid { grid-template-columns: 1fr; } }
+
+  .overview-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .overview-box::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+  .box-green::before  { background: var(--green); }
+  .box-amber::before  { background: var(--yellow); }
+  .box-red::before    { background: var(--red); }
+
+  .overview-num {
+    font-family: var(--mono);
+    font-size: 2.8rem;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: .4rem;
+  }
+  .overview-label { font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+
+  .dept-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .dept-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+  }
+
+  .dept-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: .75rem;
+  }
+  .dept-name { font-weight: 700; font-size: 1rem; }
+  .dept-count { font-family: var(--mono); font-size: .78rem; color: var(--muted); }
+
+  .dept-bar-wrap {
+    display: flex;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: rgba(0,0,0,.3);
+    margin-top: .5rem;
+  }
+
+  .privacy-note {
+    background: rgba(0,229,255,.05);
+    border: 1px solid rgba(0,229,255,.15);
+    border-radius: 8px;
+    padding: 1rem;
+    font-size: .82rem;
+    color: var(--muted);
+    line-height: 1.6;
+    margin-bottom: 2rem;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="glow">Team Overview</h1>
+  {% if sharing_count > 0 %}
+  <span class="tag tag-neutral">{{ sharing_count }} sharing</span>
+  {% endif %}
+</div>
+
+<div class="privacy-note">
+  <strong style="color:var(--text);">Privacy guaranteed.</strong>
+  You see only the aggregate green / amber / red status for employees who have opted in to sharing.
+  No names, biometrics, or individual scores are ever shown at this level.
+  Departments with fewer than 4 participating members are shown as "Unassigned" until enough members opt in.
+</div>
+
+{% if not team_stats or sharing_count == 0 %}
+<div class="card" style="text-align:center; padding:3rem; color:var(--muted); font-family:var(--mono);">
+  <div style="font-size:2rem; margin-bottom:1rem;">👥</div>
+  <div>No employees have enabled team sharing yet.</div>
+  <div style="font-size:.82rem; margin-top:.5rem;">
+    Employees can enable sharing in their Profile → Privacy &amp; Sharing settings.
+  </div>
+</div>
+
+{% else %}
+
+<!-- Summary stats -->
+<div class="overview-grid">
+  <div class="overview-box box-green">
+    <div class="overview-num" style="color:var(--green)">{{ team_stats.green }}</div>
+    <div class="overview-label">Well Recovered</div>
+  </div>
+  <div class="overview-box box-amber">
+    <div class="overview-num" style="color:var(--yellow)">{{ team_stats.amber }}</div>
+    <div class="overview-label">Moderate</div>
+  </div>
+  <div class="overview-box box-red">
+    <div class="overview-num" style="color:var(--red)">{{ team_stats.red }}</div>
+    <div class="overview-label">Low Energy</div>
+  </div>
+</div>
+
+<!-- Distribution bar -->
+{% if team_stats.total > 0 %}
+<div class="card" style="margin-bottom:2rem;">
+  <h3 style="margin-bottom:1rem;">Team Distribution</h3>
+  <div style="display:flex; height:16px; border-radius:8px; overflow:hidden; margin-bottom:.75rem;">
+    {% set g_pct = ((team_stats.green / team_stats.total) * 100) | round(1) %}
+    {% set a_pct = ((team_stats.amber / team_stats.total) * 100) | round(1) %}
+    {% set r_pct = ((team_stats.red   / team_stats.total) * 100) | round(1) %}
+    {% if g_pct > 0 %}<div style="width:{{ g_pct }}%; background:var(--green);"></div>{% endif %}
+    {% if a_pct > 0 %}<div style="width:{{ a_pct }}%; background:var(--yellow);"></div>{% endif %}
+    {% if r_pct > 0 %}<div style="width:{{ r_pct }}%; background:var(--red);"></div>{% endif %}
+  </div>
+  <div style="display:flex; gap:1.5rem; font-size:.78rem; color:var(--muted);">
+    <span><span style="color:var(--green); font-family:var(--mono);">{{ g_pct }}%</span> recovered</span>
+    <span><span style="color:var(--yellow); font-family:var(--mono);">{{ a_pct }}%</span> moderate</span>
+    <span><span style="color:var(--red); font-family:var(--mono);">{{ r_pct }}%</span> low energy</span>
+    <span style="margin-left:auto; color:var(--muted);">{{ team_stats.total }} employees total</span>
+  </div>
+</div>
+{% endif %}
+
+<!-- By department -->
+{% if dept_groups %}
+<h2 style="margin-bottom:1rem; color:var(--muted); font-family:var(--mono); font-size:.85rem; text-transform:uppercase; letter-spacing:.08em;">
+  By Department
+</h2>
+{% for dept, dept_readings in dept_groups.items() %}
+  {% set dg = dept_readings | selectattr('readiness_color', 'equalto', 'high')     | list | length %}
+  {% set da = dept_readings | selectattr('readiness_color', 'equalto', 'moderate') | list | length %}
+  {% set dr = dept_readings | selectattr('readiness_color', 'equalto', 'low')      | list | length %}
+  {% set dt = dept_readings | length %}
+  {% set dominant = 'high' if dg > da and dg > dr else ('moderate' if da >= dr else 'low') %}
+
+  <div class="dept-card">
+    <div class="dept-header">
+      <span class="dept-name">{{ dept }}</span>
+      <div style="display:flex; align-items:center; gap:.75rem;">
+        <span class="dept-count">{{ dt }} member{{ 's' if dt != 1 else '' }}</span>
+        <span class="tag tag-{{ dominant }}">
+          {% if dominant == 'high' %}HEALTHY{% elif dominant == 'moderate' %}MODERATE{% else %}STRESSED{% endif %}
+        </span>
+      </div>
+    </div>
+    {% if dt > 0 %}
+    <div class="dept-bar-wrap">
+      {% set gp = ((dg/dt)*100)|round(1) %}
+      {% set ap = ((da/dt)*100)|round(1) %}
+      {% set rp = ((dr/dt)*100)|round(1) %}
+      {% if gp > 0 %}<div style="width:{{ gp }}%; background:var(--green);"></div>{% endif %}
+      {% if ap > 0 %}<div style="width:{{ ap }}%; background:var(--yellow);"></div>{% endif %}
+      {% if rp > 0 %}<div style="width:{{ rp }}%; background:var(--red);"></div>{% endif %}
+    </div>
+    <div style="display:flex; gap:1rem; font-size:.72rem; color:var(--muted); margin-top:.5rem;">
+      {% if dg %}<span style="color:var(--green);">{{ dg }} recovered</span>{% endif %}
+      {% if da %}<span style="color:var(--yellow);">{{ da }} moderate</span>{% endif %}
+      {% if dr %}<span style="color:var(--red);">{{ dr }} low energy</span>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+{% endfor %}
+{% endif %}
+
+<!-- Upcoming features note -->
+<div class="card" style="margin-top:2rem; border-color:rgba(124,58,237,.3);">
+  <h3 style="margin-bottom:.75rem; color:var(--accent2);">Coming Soon</h3>
+  <p style="font-size:.85rem; color:var(--muted); line-height:1.7;">
+    <strong style="color:var(--text);">Workload Pressure Index</strong> — rolling 7-day trend showing whether team stress is improving or worsening.<br>
+    <strong style="color:var(--text);">Department Alerts</strong> — automated notifications when a department stays amber/red for 3+ consecutive days.<br>
+    <strong style="color:var(--text);">Project correlation</strong> — map team health signals against active sprint load.<br>
+    These features require departments to be configured by an admin and at least 4 opted-in members per department.
+  </p>
+</div>
+
+{% endif %}
+{% endblock %}
