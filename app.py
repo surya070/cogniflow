@@ -1,100 +1,138 @@
 import json
 import os
+import threading
 from datetime import datetime, timedelta
+from functools import wraps
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request
+from flask import (Flask, flash, jsonify, redirect, render_template,
+                   request, url_for)
+from flask_login import (LoginManager, current_user, login_required,
+                         login_user, logout_user)
 
-from models import DailyAnalysis, WatchReading, HeartRateReading, OxygenSaturationReading, StepReading, db
-from services.processor import process_payload, split_payload_by_sleep_sessions, extract_heart_rate_readings, extract_oxygen_readings, extract_step_readings
+from models import (DailyAnalysis, HeartRateReading, OxygenSaturationReading,
+                    StepReading, User, WatchReading, db)
 from rule_engine import score_cognitive_state
 from services.llm_service import analyze_reading
+from services.processor import (extract_heart_rate_readings,
+                                 extract_oxygen_readings,
+                                 extract_step_readings, process_payload,
+                                 split_payload_by_sleep_sessions)
 
 load_dotenv()
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "cogniflow-dev")
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "cogniflow-dev-change-in-prod")
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///cogniflow.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db.init_app(app)
 
-with app.app_context():
-    db.create_all()
+# ── Flask-Login ───────────────────────────────────────────────────────────────
+login_manager = LoginManager(app)
+login_manager.login_view = "login"
+login_manager.login_message = "Please sign in to access Cogniflow."
+login_manager.login_message_category = "info"
 
-# Custom Jinja filters
-@app.template_filter('to_ist')
+
+@login_manager.user_loader
+def load_user(user_id: str):
+    return User.query.get(int(user_id))
+
+
+# ── Google OAuth (optional — only enabled when env vars are present) ──────────
+_google_oauth_enabled = bool(
+    os.getenv("GOOGLE_CLIENT_ID") and os.getenv("GOOGLE_CLIENT_SECRET")
+)
+
+if _google_oauth_enabled:
+    from authlib.integrations.flask_client import OAuth as _OAuth
+    _oauth = _OAuth(app)
+    _google = _oauth.register(
+        name="google",
+        client_id=os.getenv("GOOGLE_CLIENT_ID"),
+        client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+        server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+        client_kwargs={"scope": "openid email profile"},
+    )
+
+
+# ── Jinja helpers ─────────────────────────────────────────────────────────────
+@app.context_processor
+def inject_globals():
+    return {
+        "google_login_enabled": _google_oauth_enabled,
+    }
+
+
+@app.template_filter("to_ist")
 def to_ist(dt):
-    """Convert UTC datetime to IST (UTC+5:30)"""
     if not dt:
         return None
-    from datetime import timedelta
-    ist_time = dt + timedelta(hours=5, minutes=30)
-    return ist_time
+    return dt + timedelta(hours=5, minutes=30)
 
-@app.template_filter('ist_time')
+
+@app.template_filter("ist_time")
 def ist_time(dt):
-    """Convert UTC datetime to IST and format as HH:MM"""
     if not dt:
-        return '—'
-    ist = to_ist(dt)
-    return ist.strftime('%H:%M')
+        return "—"
+    return to_ist(dt).strftime("%H:%M")
 
-@app.template_filter('format_duration')
+
+@app.template_filter("format_duration")
 def format_duration(minutes):
-    """Format minutes as 'Xhr Ym' format"""
     if not minutes:
-        return '—'
+        return "—"
     mins = int(minutes)
-    hrs = mins // 60
-    mins = mins % 60
-    if hrs > 0 and mins > 0:
-        return f'{hrs}hr {mins}m'
-    elif hrs > 0:
-        return f'{hrs}hr'
-    else:
-        return f'{mins}m'
+    hrs, mins = divmod(mins, 60)
+    if hrs and mins:
+        return f"{hrs}hr {mins}m"
+    return f"{hrs}hr" if hrs else f"{mins}m"
 
-# Create webhook logs directory if it doesn't exist
+
+# ── Role helpers ──────────────────────────────────────────────────────────────
+def manager_required(f):
+    """Decorator: requires manager or admin role."""
+    @wraps(f)
+    @login_required
+    def decorated(*args, **kwargs):
+        if current_user.role not in ("manager", "admin"):
+            flash("You don't have permission to view that page.", "error")
+            return redirect(url_for("dashboard"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+# ── Webhook log dir ───────────────────────────────────────────────────────────
 WEBHOOK_LOGS_DIR = "webhook_logs"
-if not os.path.exists(WEBHOOK_LOGS_DIR):
-    os.makedirs(WEBHOOK_LOGS_DIR)
+os.makedirs(WEBHOOK_LOGS_DIR, exist_ok=True)
 
 
-def _save_webhook_payload(payload: dict) -> str:
-    """
-    Save incoming webhook payload to a JSON file with timestamp as filename.
-    Returns the filename.
-    """
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")[:-3]  # Includes milliseconds
+def _save_webhook_payload(payload: dict, employee_id: str = "unknown") -> str:
+    """Save raw webhook JSON to webhook_logs/<employee_id>/<timestamp>.json."""
+    emp_dir = os.path.join(WEBHOOK_LOGS_DIR, employee_id)
+    os.makedirs(emp_dir, exist_ok=True)
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")[:-3]
     filename = f"{timestamp}.json"
-    filepath = os.path.join(WEBHOOK_LOGS_DIR, filename)
-    
-    with open(filepath, 'w') as f:
+    with open(os.path.join(emp_dir, filename), "w") as f:
         json.dump(payload, f, indent=2)
-    
     return filename
 
 
+# ── Processing pipeline ───────────────────────────────────────────────────────
 def _run_pipeline(raw: dict, employee_id: str) -> dict:
-    """
-    Full pipeline: processor -> rule engine -> LLM -> DB.
-    Called directly (no HTTP self-call) to avoid timeout issues.
-    """
+    """Full pipeline: processor → rule engine → LLM → DB."""
     fields = process_payload(raw, employee_id)
 
-    # Deduplication: use sleep_end as the unique identifier
-    # (along with employee_id) since multiple sessions can occur on same date
+    # Deduplication on (employee_id, sleep_end)
     existing = None
     if fields.get("sleep_end"):
         existing = WatchReading.query.filter_by(
             employee_id=employee_id,
             sleep_end=fields["sleep_end"]
         ).first()
-    
-    # Fallback: if no sleep_end, try sleep_date (for backward compatibility)
+
     if not existing and fields.get("sleep_date"):
-        # Only fallback if there's just one record for that date
         candidates = WatchReading.query.filter_by(
             employee_id=employee_id,
             sleep_date=fields["sleep_date"]
@@ -132,48 +170,29 @@ def _run_pipeline(raw: dict, employee_id: str) -> dict:
     analysis.warnings        = json.dumps(llm_result.get("warnings", []))
     analysis.full_response   = json.dumps(llm_result)
     db.session.commit()
-    
-    # ── Store detailed readings ──────────────────────────────
-    # Delete old detailed readings for this sleep session (if updating)
+
+    # Detailed readings
     if existing:
         HeartRateReading.query.filter_by(reading_id=reading.id).delete()
         OxygenSaturationReading.query.filter_by(reading_id=reading.id).delete()
         StepReading.query.filter_by(reading_id=reading.id).delete()
-    
-    # Extract and store heart rate readings
-    hr_readings = extract_heart_rate_readings(raw)
-    for hr_data in hr_readings:
-        hr_reading = HeartRateReading(
-            reading_id=reading.id,
-            employee_id=employee_id,
-            timestamp=hr_data["timestamp"],
-            bpm=hr_data["bpm"]
-        )
-        db.session.add(hr_reading)
-    
-    # Extract and store oxygen saturation readings
-    spo2_readings = extract_oxygen_readings(raw)
-    for spo2_data in spo2_readings:
-        spo2_reading = OxygenSaturationReading(
-            reading_id=reading.id,
-            employee_id=employee_id,
-            timestamp=spo2_data["timestamp"],
-            percentage=spo2_data["percentage"]
-        )
-        db.session.add(spo2_reading)
-    
-    # Extract and store step readings
-    step_readings = extract_step_readings(raw)
-    for step_data in step_readings:
-        step_reading = StepReading(
-            reading_id=reading.id,
-            employee_id=employee_id,
-            start_time=step_data["start_time"],
-            end_time=step_data["end_time"],
-            count=step_data["count"]
-        )
-        db.session.add(step_reading)
-    
+
+    for hr in extract_heart_rate_readings(raw):
+        db.session.add(HeartRateReading(
+            reading_id=reading.id, employee_id=employee_id,
+            timestamp=hr["timestamp"], bpm=hr["bpm"]
+        ))
+    for s in extract_oxygen_readings(raw):
+        db.session.add(OxygenSaturationReading(
+            reading_id=reading.id, employee_id=employee_id,
+            timestamp=s["timestamp"], percentage=s["percentage"]
+        ))
+    for st in extract_step_readings(raw):
+        db.session.add(StepReading(
+            reading_id=reading.id, employee_id=employee_id,
+            start_time=st["start_time"], end_time=st["end_time"], count=st["count"]
+        ))
+
     db.session.commit()
 
     return {
@@ -187,17 +206,175 @@ def _run_pipeline(raw: dict, employee_id: str) -> dict:
     }
 
 
-# -------------------------------------------------------------------
-# WEBHOOK
-# -------------------------------------------------------------------
+# ═══════════════════════════════════════════════════════════════════════════════
+# AUTH ROUTES
+# ═══════════════════════════════════════════════════════════════════════════════
 
-@app.route("/webhook/watch",  methods=["POST"])
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for("dashboard"))
+
+    email = ""
+    if request.method == "POST":
+        email    = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+
+        user = User.query.filter_by(email=email).first()
+        if user and user.check_password(password):
+            login_user(user)
+            flash(f"Welcome back, {user.name}!", "success")
+            next_page = request.args.get("next")
+            return redirect(next_page or url_for("dashboard"))
+
+        flash("Invalid email or password.", "error")
+
+    return render_template("auth/login.html", email=email)
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if current_user.is_authenticated:
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        name     = request.form.get("name", "").strip()
+        email    = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        confirm  = request.form.get("confirm_password", "")
+
+        # Validation
+        if not name or not email or not password:
+            flash("All fields are required.", "error")
+            return render_template("auth/register.html", name=name, email=email)
+
+        if len(password) < 8:
+            flash("Password must be at least 8 characters.", "error")
+            return render_template("auth/register.html", name=name, email=email)
+
+        if password != confirm:
+            flash("Passwords do not match.", "error")
+            return render_template("auth/register.html", name=name, email=email)
+
+        if User.query.filter_by(email=email).first():
+            flash("An account with that email already exists.", "error")
+            return render_template("auth/register.html", name=name, email=email)
+
+        # Create user
+        user = User(
+            name=name,
+            email=email,
+            webhook_token=User.make_webhook_token(),
+            employee_id=User.make_employee_id(),
+        )
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+
+        login_user(user)
+        flash(f"Account created! Welcome, {user.name}.", "success")
+        return redirect(url_for("profile"))
+
+    return render_template("auth/register.html", name="", email="")
+
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    flash("You've been signed out.", "info")
+    return redirect(url_for("login"))
+
+
+# ── Google OAuth ──────────────────────────────────────────────────────────────
+
+@app.route("/login/google")
+def google_login():
+    if not _google_oauth_enabled:
+        flash("Google login is not configured on this server.", "error")
+        return redirect(url_for("login"))
+    redirect_uri = url_for("google_callback", _external=True)
+    return _google.authorize_redirect(redirect_uri)
+
+
+@app.route("/login/google/callback")
+def google_callback():
+    if not _google_oauth_enabled:
+        return redirect(url_for("login"))
+
+    try:
+        token     = _google.authorize_access_token()
+        user_info = token.get("userinfo") or {}
+    except Exception:
+        flash("Google authentication failed. Please try again.", "error")
+        return redirect(url_for("login"))
+
+    google_id  = user_info.get("sub")
+    email      = user_info.get("email", "").lower()
+    name       = user_info.get("name") or email
+    avatar_url = user_info.get("picture")
+
+    if not google_id or not email:
+        flash("Google did not return required account information.", "error")
+        return redirect(url_for("login"))
+
+    # Find or create user
+    user = User.query.filter_by(google_id=google_id).first()
+    if not user:
+        user = User.query.filter_by(email=email).first()
+        if user:
+            # Link Google to existing email/password account
+            user.google_id  = google_id
+            user.avatar_url = avatar_url
+        else:
+            user = User(
+                email=email,
+                name=name,
+                google_id=google_id,
+                avatar_url=avatar_url,
+                webhook_token=User.make_webhook_token(),
+                employee_id=User.make_employee_id(),
+            )
+            db.session.add(user)
+    db.session.commit()
+
+    login_user(user)
+    flash(f"Welcome, {user.name}!", "success")
+    return redirect(url_for("dashboard"))
+
+
+# ── Profile ───────────────────────────────────────────────────────────────────
+
+@app.route("/profile")
+@login_required
+def profile():
+    webhook_url = (
+        request.host_url.rstrip("/")
+        + url_for("receive_watch_data")
+        + f"?token={current_user.webhook_token}"
+    )
+    return render_template("profile.html", webhook_url=webhook_url)
+
+
+@app.route("/profile/regenerate-token", methods=["POST"])
+@login_required
+def regenerate_token():
+    current_user.regenerate_token()
+    db.session.commit()
+    flash("Webhook token regenerated. Update your watch app with the new URL.", "success")
+    return redirect(url_for("profile"))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WEBHOOK  (token-based, no login session needed — called by watch app)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/webhook/watch", methods=["POST"])
 def receive_watch_data():
     """
-    Accepts single JSON object or array (same as your old code).
-    Falls back to manual JSON parse if Content-Type header is wrong
-    (common issue with watch apps sending data).
-    Saves all incoming payloads to webhook_logs directory with timestamp filenames.
+    Accepts POST from Health Auto Export.
+    Authentication: ?token=<webhook_token>   (preferred)
+    Legacy fallback: ?employee_id=<id>       (for existing setups)
     """
     raw_body = request.get_data(as_text=True)
     payload  = request.get_json(silent=True)
@@ -210,95 +387,114 @@ def receive_watch_data():
 
     if not payload:
         return jsonify({"error": "Empty or missing payload"}), 400
-    
-    # Save the webhook payload with timestamp filename
-    saved_filename = _save_webhook_payload(payload)
 
-    employee_id = (
-        request.args.get("employee_id")
-        or (payload.get("employee_id") if isinstance(payload, dict) else None)
-        or "unknown"
-    )
+    # ── Resolve employee_id from token or legacy param ──
+    token = request.args.get("token")
+    if token:
+        user = User.query.filter_by(webhook_token=token).first()
+        if not user:
+            return jsonify({"error": "Invalid webhook token"}), 401
+        employee_id = user.employee_id
+    else:
+        # Legacy: accept employee_id query param (existing setups)
+        employee_id = (
+            request.args.get("employee_id")
+            or (payload.get("employee_id") if isinstance(payload, dict) else None)
+            or "unknown"
+        )
 
-    if isinstance(payload, dict):
-        # Split payload by sleep sessions if it contains multiple
-        split_payloads = split_payload_by_sleep_sessions(payload)
-        results = []
-        for split_payload in split_payloads:
-            results.append(_run_pipeline(split_payload, employee_id))
-        # Return the last result but include all results
-        response = results[-1] if results else {"status": "error"}
-        response["webhook_log_file"] = saved_filename
-        if len(results) > 1:
-            response["note"] = f"Split and processed {len(results)} sleep sessions"
-        return jsonify(response), 200
+    saved_filename = _save_webhook_payload(payload, employee_id)
 
-    elif isinstance(payload, list):
-        results = []
-        for item in payload:
-            if isinstance(item, dict):
-                results.append(_run_pipeline(item, employee_id))
-        if not results:
-            return jsonify({"error": "Array contained no valid objects"}), 400
-        results[-1]["webhook_log_file"] = saved_filename
-        return jsonify(results[-1]), 200
+    # Process in background so the watch app gets an immediate 200
+    # (Gemini analysis can take 10–20 s; the watch app times out otherwise)
+    def _process_bg(p, eid):
+        with app.app_context():
+            if isinstance(p, dict):
+                for sub in split_payload_by_sleep_sessions(p):
+                    try:
+                        _run_pipeline(sub, eid)
+                    except Exception as exc:
+                        app.logger.error("Pipeline error for %s: %s", eid, exc)
+            elif isinstance(p, list):
+                for item in p:
+                    if isinstance(item, dict):
+                        try:
+                            _run_pipeline(item, eid)
+                        except Exception as exc:
+                            app.logger.error("Pipeline error for %s: %s", eid, exc)
 
-    return jsonify({"error": "Payload must be a JSON object or array"}), 400
+    threading.Thread(target=_process_bg, args=(payload, employee_id), daemon=True).start()
+    return jsonify({"status": "received", "webhook_log_file": saved_filename}), 200
 
 
-# -------------------------------------------------------------------
+# ═══════════════════════════════════════════════════════════════════════════════
 # DASHBOARD
-# -------------------------------------------------------------------
+# ═══════════════════════════════════════════════════════════════════════════════
 
 @app.route("/")
+@login_required
 def dashboard():
     cutoff = datetime.utcnow() - timedelta(days=7)
-    readings = (
-        WatchReading.query
-        .filter(WatchReading.received_at >= cutoff)
-        .order_by(WatchReading.received_at.desc())
-        .all()
-    )
-    seen = set()
-    latest = []
+    query  = WatchReading.query.filter(WatchReading.received_at >= cutoff)
+
+    # Employees only see their own data
+    if current_user.role == "employee":
+        query = query.filter_by(employee_id=current_user.employee_id)
+
+    readings = query.order_by(WatchReading.received_at.desc()).all()
+
+    # Deduplicate to one card per employee (latest reading)
+    seen, latest = set(), []
     for r in readings:
         if r.employee_id not in seen:
             seen.add(r.employee_id)
             latest.append(r)
+
     return render_template("dashboard.html", readings=latest)
 
 
-# -------------------------------------------------------------------
-# LAST RECEIVED
-# -------------------------------------------------------------------
+# ── Last received (debug) ─────────────────────────────────────────────────────
 
 @app.route("/last-received")
+@login_required
 def last_received():
     raw_payload = "{}"
-    filename = "No files received yet"
-    
-    # Find the most recent JSON file in webhook_logs directory
-    if os.path.exists(WEBHOOK_LOGS_DIR):
-        json_files = [f for f in os.listdir(WEBHOOK_LOGS_DIR) if f.endswith('.json')]
-        if json_files:
-            # Sort by filename (timestamp-based) and get the latest
-            json_files.sort(reverse=True)
-            latest_file = json_files[0]
-            filename = latest_file
-            
-            try:
-                filepath = os.path.join(WEBHOOK_LOGS_DIR, latest_file)
-                with open(filepath, 'r') as f:
-                    payload = json.load(f)
-                    raw_payload = json.dumps(payload, indent=2)
-            except Exception as e:
-                raw_payload = f"Error reading file: {str(e)}"
-    
-    return render_template("last_received.html", filename=filename, raw_payload=raw_payload)
+    filename    = "No files received yet"
 
+    if os.path.exists(WEBHOOK_LOGS_DIR):
+        # Search recursively through employee subdirectories
+        all_files = []
+        for root, _, files in os.walk(WEBHOOK_LOGS_DIR):
+            for f in files:
+                if f.endswith(".json"):
+                    all_files.append(os.path.join(root, f))
+        if all_files:
+            all_files.sort(reverse=True)
+            latest_path = all_files[0]
+            filename    = os.path.relpath(latest_path, WEBHOOK_LOGS_DIR)
+            try:
+                with open(latest_path) as f:
+                    raw_payload = json.dumps(json.load(f), indent=2)
+            except Exception as e:
+                raw_payload = f"Error reading file: {e}"
+
+    return render_template("last_received.html",
+                           filename=filename, raw_payload=raw_payload)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# EMPLOYEE DETAIL
+# ═══════════════════════════════════════════════════════════════════════════════
 
 @app.route("/employee/<employee_id>")
+@login_required
 def employee_detail(employee_id):
+    # Employees can only view their own data
+    if (current_user.role == "employee"
+            and current_user.employee_id != employee_id):
+        flash("You don't have permission to view that profile.", "error")
+        return redirect(url_for("dashboard"))
+
     readings = (
         WatchReading.query
         .filter_by(employee_id=employee_id)
@@ -309,10 +505,8 @@ def employee_detail(employee_id):
     latest   = readings[0] if readings else None
     analysis = latest.analysis if latest else None
 
-    insights = []
-    task_alloc = {}
-    warnings = []
-    readiness_label = "-"
+    insights = task_alloc = warnings = {}
+    insights, task_alloc, warnings, readiness_label = [], {}, [], "-"
 
     if analysis:
         try:
@@ -337,19 +531,25 @@ def employee_detail(employee_id):
     )
 
 
-# -------------------------------------------------------------------
+# ═══════════════════════════════════════════════════════════════════════════════
 # JSON API
-# -------------------------------------------------------------------
+# ═══════════════════════════════════════════════════════════════════════════════
 
 @app.route("/api/employees")
+@login_required
 def api_employees():
+    if current_user.role == "employee":
+        return jsonify([current_user.employee_id])
     rows = db.session.query(WatchReading.employee_id).distinct().all()
     return jsonify([r[0] for r in rows])
 
 
 @app.route("/api/reading/<int:reading_id>")
+@login_required
 def api_reading(reading_id):
     r = WatchReading.query.get_or_404(reading_id)
+    if current_user.role == "employee" and r.employee_id != current_user.employee_id:
+        return jsonify({"error": "Forbidden"}), 403
     return jsonify({
         "id":              r.id,
         "employee_id":     r.employee_id,
@@ -365,13 +565,16 @@ def api_reading(reading_id):
     })
 
 
-# -------------------------------------------------------------------
-# HEART RATE ANALYSIS
-# -------------------------------------------------------------------
+# ── Heart rate ────────────────────────────────────────────────────────────────
 
 @app.route("/employee/<employee_id>/heart-rate")
+@login_required
 def heart_rate_analysis(employee_id):
-    """Display heart rate trend analysis page"""
+    if (current_user.role == "employee"
+            and current_user.employee_id != employee_id):
+        flash("You don't have permission to view that profile.", "error")
+        return redirect(url_for("dashboard"))
+
     readings = (
         WatchReading.query
         .filter_by(employee_id=employee_id)
@@ -379,60 +582,44 @@ def heart_rate_analysis(employee_id):
         .limit(30)
         .all()
     )
-    
-    if not readings:
-        return render_template("hr_analysis.html", employee_id=employee_id, readings=[], data=None)
-    
-    return render_template("hr_analysis.html", employee_id=employee_id, readings=readings)
+    return render_template("hr_analysis.html",
+                           employee_id=employee_id, readings=readings)
 
 
 @app.route("/api/employee/<employee_id>/heart-rate")
+@login_required
 def api_heart_rate(employee_id):
-    """
-    Get hourly aggregated heart rate data.
-    
-    Query params:
-    - date: YYYY-MM-DD (optional, defaults to most recent reading)
-    - reading_id: specific reading ID (optional)
-    
-    Returns hourly data with avg, min, max BPM
-    """
-    reading_id = request.args.get('reading_id', type=int)
-    date_str = request.args.get('date')
-    
-    # If date provided, find reading for that date
+    if (current_user.role == "employee"
+            and current_user.employee_id != employee_id):
+        return jsonify({"error": "Forbidden"}), 403
+
+    reading_id = request.args.get("reading_id", type=int)
+    date_str   = request.args.get("date")
+
     if date_str and not reading_id:
         try:
             target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
         except ValueError:
             return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
-        
         reading = WatchReading.query.filter_by(
-            employee_id=employee_id,
-            sleep_date=target_date
-        ).first()
-        
+            employee_id=employee_id, sleep_date=target_date).first()
         if not reading:
             return jsonify({"error": "No reading found for that date"}), 404
         reading_id = reading.id
-    
-    # If no date/reading specified, use most recent
+
     if not reading_id:
-        reading = WatchReading.query.filter_by(
-            employee_id=employee_id
-        ).order_by(WatchReading.sleep_date.desc()).first()
-        
+        reading = (WatchReading.query
+                   .filter_by(employee_id=employee_id)
+                   .order_by(WatchReading.sleep_date.desc())
+                   .first())
         if not reading:
             return jsonify({"error": "No readings found for this employee"}), 404
         reading_id = reading.id
-    
-    # Get the reading object to get sleep time bounds
+
     reading_data = WatchReading.query.get(reading_id)
     if not reading_data:
         return jsonify({"error": "Reading not found"}), 404
-    
-    # Get all heart rate readings for this sleep session
-    # Filter by reading_id AND by the actual sleep time window (sleep_start to sleep_end)
+
     hr_readings = (
         HeartRateReading.query
         .filter_by(reading_id=reading_id, employee_id=employee_id)
@@ -443,71 +630,66 @@ def api_heart_rate(employee_id):
         .order_by(HeartRateReading.timestamp)
         .all()
     )
-    
+
     if not hr_readings:
         return jsonify({
-            "reading_id": reading_id, 
+            "reading_id": reading_id,
             "date": reading_data.sleep_date,
-            "message": "No heart rate data", 
+            "message": "No heart rate data",
             "hourly": []
         })
-    
-    # Aggregate by hour (within the sleep session only)
-    hourly_data = {}
+
+    hourly_data: dict = {}
     for hr in hr_readings:
-        hour_key = hr.timestamp.strftime("%H:00")
-        if hour_key not in hourly_data:
-            hourly_data[hour_key] = []
-        hourly_data[hour_key].append(hr.bpm)
-    
-    # Calculate stats for each hour
-    hourly_stats = []
-    for hour in sorted(hourly_data.keys()):
-        bpms = hourly_data[hour]
-        hourly_stats.append({
-            "hour": hour,
-            "avg": round(sum(bpms) / len(bpms), 1),
-            "min": min(bpms),
-            "max": max(bpms),
-            "count": len(bpms)
-        })
-    
+        key = hr.timestamp.strftime("%H:00")
+        hourly_data.setdefault(key, []).append(hr.bpm)
+
+    hourly_stats = [
+        {
+            "hour":  h,
+            "avg":   round(sum(bpms) / len(bpms), 1),
+            "min":   min(bpms),
+            "max":   max(bpms),
+            "count": len(bpms),
+        }
+        for h, bpms in sorted(hourly_data.items())
+    ]
+
     return jsonify({
-        "reading_id": reading_id,
-        "employee_id": employee_id,
-        "date": reading_data.sleep_date,
-        "sleep_start": reading_data.sleep_start.isoformat() if reading_data.sleep_start else None,
-        "sleep_end": reading_data.sleep_end.isoformat() if reading_data.sleep_end else None,
+        "reading_id":    reading_id,
+        "employee_id":   employee_id,
+        "date":          reading_data.sleep_date,
+        "sleep_start":   reading_data.sleep_start.isoformat() if reading_data.sleep_start else None,
+        "sleep_end":     reading_data.sleep_end.isoformat() if reading_data.sleep_end else None,
         "total_readings": len(hr_readings),
-        "resting_hr": reading_data.resting_heart_rate if reading_data else None,
-        "avg_hr": reading_data.avg_heart_rate if reading_data else None,
-        "hourly": hourly_stats
+        "resting_hr":    reading_data.resting_heart_rate,
+        "avg_hr":        reading_data.avg_heart_rate,
+        "hourly":        hourly_stats,
     })
 
 
-# -------------------------------------------------------------------
-# TEST — in-process injection, no HTTP self-call (fixes the timeout)
-# -------------------------------------------------------------------
+# ── Test inject ───────────────────────────────────────────────────────────────
 
 @app.route("/test/inject")
+@login_required
 def test_inject():
-    """
-    GET /test/inject?employee_id=emp_001
-    Runs full pipeline with sample data. No external HTTP call.
-    """
-    employee_id = request.args.get("employee_id", "emp_001")
+    """GET /test/inject — runs the full pipeline with sample data."""
+    employee_id = request.args.get("employee_id", current_user.employee_id)
+
+    # Employees can only inject data for themselves
+    if current_user.role == "employee" and employee_id != current_user.employee_id:
+        employee_id = current_user.employee_id
+
     sample = {
         "timestamp": datetime.utcnow().strftime("%Y-%m-%dT08:00:00Z"),
-        "sleep": [
-            {
-                "stages": [
-                    {"stage": 4, "duration_seconds": 5700},
-                    {"stage": 3, "duration_seconds": 6000},
-                    {"stage": 2, "duration_seconds": 12600},
-                    {"stage": 1, "duration_seconds": 1800},
-                ]
-            }
-        ],
+        "sleep": [{
+            "stages": [
+                {"stage": 4, "duration_seconds": 5700},
+                {"stage": 3, "duration_seconds": 6000},
+                {"stage": 2, "duration_seconds": 12600},
+                {"stage": 1, "duration_seconds": 1800},
+            ]
+        }],
         "heart_rate": [
             {"bpm": 56}, {"bpm": 58}, {"bpm": 57},
             {"bpm": 60}, {"bpm": 62}, {"bpm": 59},
@@ -519,5 +701,11 @@ def test_inject():
     return jsonify(result), 200
 
 
+# ── DB init & run ─────────────────────────────────────────────────────────────
+
+with app.app_context():
+    db.create_all()
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5000, debug=True)
