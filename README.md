@@ -88,9 +88,7 @@ When a new webhook arrives from the watch, `app.py` runs the following pipeline:
 
 1. **Processor** — extracts sleep stages (correct mapping: `"4"` = deep, `"5"` = REM, `"6"` = light), resting HR (10th percentile of overnight readings), SpO2, steps, sleep efficiency.
 2. **Energy Score** — the derived formula is applied directly: `score = intercept + Σ(coef × feature)`, clipped to [0, 100]. Falls back to rule engine percentage if the formula file is missing.
-3. **Stress Score** — derived from resting HR, sleep duration, and HRV (when available). Independent of the energy score.
 4. **Rule Engine** — categorical labels (high / moderate / low) for backward compatibility.
-5. **Gemini LLM** — runs in a background thread (returns 200 immediately to the watch app, preventing timeout).
 
 Score bands:
 
@@ -110,10 +108,8 @@ CogniFlow is a **workforce wellbeing intelligence** tool. The core insight:
 
 ### Employee Portal
 - **Energy Score (0–100)** — primary readiness number, Samsung-calibrated.
-- **Stress Score (0–100)** — derived from resting HR, sleep duration, HRV.
 - **Sleep Breakdown** — deep / REM / light / awake bars with sleep efficiency %.
 - **Vitals** — resting HR, SpO2, HRV, steps.
-- **AI Analysis** — Gemini summary with key insights and task allocation advice.
 - **History Charts** — energy and stress trends over 7 days / 1 month / 6 months.
 - **Privacy toggle** — share aggregate status with the team dashboard (off by default).
 
