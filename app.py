@@ -562,24 +562,19 @@ def receive_watch_data():
 def dashboard():
     cutoff = datetime.utcnow() - timedelta(days=7)
 
-    if current_user.role == "employee":
-        readings = (WatchReading.query
-                    .filter_by(employee_id=current_user.employee_id)
-                    .filter(WatchReading.received_at >= cutoff)
-                    .order_by(WatchReading.received_at.desc())
-                    .all())
-        return render_template("dashboard.html", readings=readings[:1],
-                               all_readings=readings)
-
-    # Managers and admins see their own data on the main dashboard
-    # (team view is at /manager)
     readings = (WatchReading.query
                 .filter_by(employee_id=current_user.employee_id)
                 .filter(WatchReading.received_at >= cutoff)
                 .order_by(WatchReading.received_at.desc())
                 .all())
-    return render_template("dashboard.html", readings=readings[:1],
-                           all_readings=readings)
+    latest = readings[0] if readings else None
+    insights = generate_insights(latest) if latest else []
+
+    return render_template("dashboard.html",
+                           readings=readings[:1],
+                           all_readings=readings,
+                           today_reading=latest,
+                           today_insights=insights)
 
 
 @app.route("/last-received")
