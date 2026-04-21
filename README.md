@@ -55,7 +55,7 @@ The solution was a three-stage approach:
 
 ### Stage 1 — Seed Profiles (`scripts/build_seeds.py`)
 
-Before generating any synthetic data, we needed a realistic physiological baseline for each person. `build_seeds.py` creates one full Samsung-format webhook payload per person, with all fields tuned to their age, sex, and typical biometric profile:
+Before generating any synthetic data, we needed a realistic physiological baseline for each person. We have collected full Samsung-format webhook payload per person, with all fields like age, sex, and typical biometric profile:
 
 | Person | Age | Sex | Resting HR | Deep% | REM% | Baseline Steps |
 |--------|-----|-----|-----------|-------|------|----------------|
