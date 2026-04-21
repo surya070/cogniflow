@@ -6,30 +6,9 @@ CogniFlow connects Samsung Galaxy Watch biometric data to a personal and team-le
 
 ---
 
-## Webhook Integration
-
-Each user gets a personal webhook URL on their Profile page:
-
-```
-POST http://<your-server>/webhook/watch?token=<personal_token>
-Content-Type: application/json
-
-{ "sleep": [...], "heart_rate": [...], "oxygen_saturation": [...], "steps": [...] }
-```
-
-Configure Health Connect on Android with an automation app (HTTP Shortcuts, Tasker, or Health Auto Export) to POST daily after waking. The server returns `200` immediately; Gemini analysis runs in the background.
-
----
-
-## Google OAuth Setup (fixing "Permission denied to generate login hint")
-
-1. Go to **Google Cloud Console → APIs & Services → Credentials**
-2. Open your OAuth 2.0 Client ID
-3. **Authorised JavaScript origins** → add `http://localhost:5000`
-4. **Authorised redirect URIs** → add `http://localhost:5000/auth/google/callback`
-5. Go to **OAuth consent screen → Test users** → confirm your email is listed
-6. Make sure **User type** is **External** (Internal requires a Google Workspace org)
-7. Save and wait ~5 minutes
+## Problem Statement
+Existing workplace tools do not consider employee physiological state, leading to inefficient workload distribution and increased fatigue. While wearable devices collect relevant biometric data, there is no system that translates this data into actionable insights for workplace use while ensuring privacy.
+The problem can be formally stated as: given continuous biometric streams from wearable devices, how can an intelligent system compute a reliable cognitive readiness metric, present it to employees in a meaningful way, and simultaneously preserve individual-level privacy when surfacing team-level insights to managers?
 
 ---
 
@@ -223,17 +202,30 @@ venv/Scripts/python scripts/train_model.py          # train and save model
 
 ---
 
-## Tech Stack
+## Webhook Integration
 
-| Layer | Technology |
-|-------|-----------|
-| Backend | Flask (Python 3.11+) |
-| Database | SQLite via SQLAlchemy |
-| Auth | Flask-Login + email/password + Google OAuth |
-| ML pipeline | scikit-learn, pandas, numpy, joblib |
-| LLM analysis | Google Gemini API |
-| Frontend | Jinja2, Chart.js |
-| Watch integration | Samsung Galaxy Watch → Health Connect → webhook POST |
+Each user gets a personal webhook URL on their Profile page:
+
+```
+POST http://<your-server>/webhook/watch?token=<personal_token>
+Content-Type: application/json
+
+{ "sleep": [...], "heart_rate": [...], "oxygen_saturation": [...], "steps": [...] }
+```
+
+Configure Health Connect on Android with an automation app (HTTP Shortcuts, Tasker, or Health Auto Export) to POST daily after waking. The server returns `200` immediately; Gemini analysis runs in the background.
+
+---
+
+## Google OAuth Setup (fixing "Permission denied to generate login hint")
+
+1. Go to **Google Cloud Console → APIs & Services → Credentials**
+2. Open your OAuth 2.0 Client ID
+3. **Authorised JavaScript origins** → add `http://localhost:5000`
+4. **Authorised redirect URIs** → add `http://localhost:5000/auth/google/callback`
+5. Go to **OAuth consent screen → Test users** → confirm your email is listed
+6. Make sure **User type** is **External** (Internal requires a Google Workspace org)
+7. Save and wait ~5 minutes
 
 ---
 
@@ -264,3 +256,19 @@ python app.py
 ```
 
 The database is created automatically on first run.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Backend | Flask (Python 3.11+) |
+| Database | SQLite via SQLAlchemy |
+| Auth | Flask-Login + email/password + Google OAuth |
+| ML pipeline | scikit-learn, pandas, numpy, joblib |
+| LLM analysis | Google Gemini API |
+| Frontend | Jinja2, Chart.js |
+| Watch integration | Samsung Galaxy Watch → Health Connect → webhook POST |
+
+---
