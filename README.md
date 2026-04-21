@@ -50,7 +50,7 @@ This is the core technical contribution of the project. The goal was to train a 
 
 ### The Problem
 
-Only one person's real Samsung Galaxy Watch data was available (Surya, ~5 nights of full-fidelity payloads). A regression model needs hundreds of labelled examples across varied demographics to generalise.
+Only one person's real Samsung Galaxy Watch data was available (~5 nights of full-fidelity payloads). A regression model needs hundreds of labelled examples across varied demographics to generalise.
 
 The solution was a three-stage approach:
 1. Generate a large, realistic synthetic dataset from physiological first principles
@@ -61,7 +61,7 @@ The solution was a three-stage approach:
 
 ### Stage 1 — Seed Profiles
 
-Before generating any synthetic data, we needed a realistic physiological baseline for each person. We collected one full Samsung-format webhook payload per person, with all fields like their age, sex, and typical biometric profile:
+Before generating any synthetic data, we needed a realistic physiological baseline for each person. We collected one full Samsung-format webhook payload per person from four people, with all fields like their age, sex, etc.
 
 | Person | Age | Sex | Resting HR | Deep% | REM% | Baseline Steps |
 |--------|-----|-----|-----------|-------|------|----------------|
